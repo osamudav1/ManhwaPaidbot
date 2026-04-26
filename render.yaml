@@ -1,0 +1,42 @@
+# Render Blueprint — one-click deploy for the Telegram Manhwa Bot.
+#
+# Usage:
+#   1. Push this repo to GitHub.
+#   2. On https://dashboard.render.com → "New" → "Blueprint" → connect the repo.
+#   3. Render reads this file, builds the Docker image, and starts the service.
+#   4. Fill in the secret env vars marked `sync: false` in the Render dashboard.
+
+databases:
+  - name: manhwa-bot-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: manhwa-bot
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      # Render injects PORT automatically — do not override it here.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: manhwa-bot-db
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false # paste your BotFather token in the Render dashboard
+      - key: OWNER_TELEGRAM_ID
+        sync: false # your numeric Telegram user ID
+      - key: KPAY_PHONE
+        sync: false # KPay phone number, e.g. 09xxxxxxxxx
+      - key: KPAY_NAME
+        sync: false # KPay account holder name

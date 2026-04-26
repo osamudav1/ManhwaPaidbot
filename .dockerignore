@@ -1,0 +1,29 @@
+# Build output (we rebuild inside the image)
+**/dist
+**/node_modules
+
+# Other artifacts that aren't needed for the api-server
+artifacts/mockup-sandbox
+
+# Dev / OS / IDE clutter
+.git
+.gitignore
+.local
+.replit
+.config
+.cache
+.upm
+.pythonlibs
+.vscode
+.idea
+*.log
+.DS_Store
+
+# Replit-only assets — not needed at runtime
+attached_assets
+replit.md
+
+# Env files (secrets must be set on Render, not baked into the image)
+.env
+.env.*
+!.env.example
