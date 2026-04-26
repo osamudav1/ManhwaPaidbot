@@ -235,6 +235,97 @@ async function showAdminPanel(ctx: any) {
 }
 
 export function registerHandlers(bot: Telegraf) {
+  // ===== User ↔ Owner Relay =====
+  // In-memory map: forwarded message ID in owner's chat → original user's Telegram ID.
+  // When the owner replies to one of these forwarded messages, the bot copies
+  // the reply back to the original user (any media type — text, photo, video,
+  // voice, sticker, document, etc., handled natively by Telegram's copyMessage).
+  const forwardedMap = new Map<number, number>();
+
+  bot.use(async (ctx, next) => {
+    const message: any = (ctx as any).message;
+    if (!message || !ctx.from || !ctx.chat) return next();
+
+    const userId = ctx.from.id;
+
+    // ----- Owner replying to a forwarded user message → relay back -----
+    if (isOwner(userId)) {
+      const replyTo = message.reply_to_message;
+      if (replyTo) {
+        const targetUserId = forwardedMap.get(replyTo.message_id);
+        if (targetUserId) {
+          try {
+            await ctx.telegram.copyMessage(
+              targetUserId,
+              ctx.chat.id,
+              message.message_id
+            );
+            await safeReply(ctx, "✅ User ဆီ ပြန်ပို့ပြီးပါပြီ");
+          } catch (err: any) {
+            const desc = String(err?.description || err?.message || "");
+            logger.warn({ err: desc, targetUserId }, "Owner reply relay failed");
+            await safeReply(
+              ctx,
+              `❌ User ဆီ ပြန်ပို့ မရပါ။\n<blockquote>${escHtml(desc)}</blockquote>`,
+              { parse_mode: "HTML" }
+            );
+          }
+          return; // handled — do not pass to other handlers
+        }
+      }
+      return next();
+    }
+
+    // ----- Non-owner sending a message → forward to owner if no active flow -----
+    const state = getUserState(userId);
+    if (state.action) return next(); // user is in purchase / restore / etc.
+    if (typeof message.text === "string" && message.text.startsWith("/")) {
+      return next(); // commands like /start
+    }
+
+    // Skip pure callback / channel posts / forwarded service messages
+    const isRelayable =
+      message.text ||
+      message.photo ||
+      message.video ||
+      message.voice ||
+      message.audio ||
+      message.document ||
+      message.sticker ||
+      message.animation ||
+      message.video_note;
+    if (!isRelayable) return next();
+
+    try {
+      const fullName = `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim();
+      const usernamePart = ctx.from.username ? ` @${ctx.from.username}` : "";
+      await ctx.telegram.sendMessage(
+        OWNER_ID,
+        `📨 <b>စာအသစ် ရောက်လာပါတယ်</b>\n` +
+          `👤 <b>${escHtml(fullName) || "(no name)"}</b>${escHtml(usernamePart)}\n` +
+          `🆔 <code>${userId}</code>\n` +
+          `<blockquote>💬 အောက်က message ကို Reply ဆွဲပြီး ပြန်ရိုက်ပါ — User ဆီ အလိုအလျောက် ပြန်ပို့ပေးပါမည်။</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+      const copied = await ctx.telegram.copyMessage(
+        OWNER_ID,
+        ctx.chat.id,
+        message.message_id
+      );
+      forwardedMap.set(copied.message_id, userId);
+
+      // Trim the map if it grows too large (keep last 1000 entries)
+      if (forwardedMap.size > 1000) {
+        const firstKey = forwardedMap.keys().next().value;
+        if (firstKey !== undefined) forwardedMap.delete(firstKey);
+      }
+    } catch (err) {
+      logger.error({ err }, "Failed to relay user message to owner");
+    }
+    // After relaying, stop — no other handler should react to this message.
+    return;
+  });
+
   // ===== /start =====
   bot.start(async (ctx) => {
     try {
@@ -385,8 +476,11 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     if (!isOwner(ctx.from.id)) return;
     const state = getUserState(ctx.from.id);
-    if (!state.broadcastText && !state.broadcastPhotoFileId) return;
-    setUserState(ctx.from.id, { action: "broadcast_wait_button_label" });
+    if (!state.broadcastText && !state.broadcastPhotoFileId) {
+      await safeReply(ctx, "❌ ပထမ broadcast message ပို့ပေးပါ။");
+      return;
+    }
+    updateUserState(ctx.from.id, { action: "broadcast_wait_button_label" });
     await safeReply(
       ctx,
       `🔘 <b>Button Label</b>\n\nButton မှာ ပြသမည့် စာသား ရိုက်ပါ။\n<blockquote>ဥပမာ: 📢 Channel သို့ ဝင်ရန်</blockquote>`,
@@ -501,19 +595,18 @@ export function registerHandlers(bot: Telegraf) {
     if (state.action === "broadcast_wait_content") {
       const photo = msg.photo?.[msg.photo.length - 1];
       if (photo) {
-        setUserState(userId, {
+        updateUserState(userId, {
           action: "broadcast_preview",
           broadcastPhotoFileId: photo.file_id,
           broadcastText: msg.caption || "",
           broadcastEntities: msg.caption_entities || undefined,
-          broadcastButtons: state.broadcastButtons || [],
         });
-      } else if (typeof msg.text === "string") {
-        setUserState(userId, {
+      } else if (typeof msg.text === "string" && msg.text.trim()) {
+        updateUserState(userId, {
           action: "broadcast_preview",
+          broadcastPhotoFileId: undefined,
           broadcastText: msg.text,
           broadcastEntities: msg.entities || undefined,
-          broadcastButtons: state.broadcastButtons || [],
         });
       } else {
         await safeReply(ctx, "❌ စာ သို့မဟုတ် ပုံသာ ပို့ပေးပါ။");
@@ -529,7 +622,7 @@ export function registerHandlers(bot: Telegraf) {
         await safeReply(ctx, "❌ Button label ရိုက်ပေးပါ။");
         return true;
       }
-      setUserState(userId, {
+      updateUserState(userId, {
         action: "broadcast_wait_button_url",
         broadcastPendingButtonLabel: label,
       });
@@ -557,7 +650,7 @@ export function registerHandlers(bot: Telegraf) {
       }
       const label = state.broadcastPendingButtonLabel || "Open";
       const buttons = [...(state.broadcastButtons || []), { label, url }];
-      setUserState(userId, {
+      updateUserState(userId, {
         action: "broadcast_preview",
         broadcastButtons: buttons,
         broadcastPendingButtonLabel: undefined,
@@ -591,15 +684,20 @@ export function registerHandlers(bot: Telegraf) {
       if (photoId) {
         await ctx.telegram.sendPhoto(ctx.chat.id, photoId, {
           caption: text || undefined,
-          caption_entities: entities,
+          caption_entities: text ? entities : undefined,
           reply_markup: previewMarkup,
         } as any);
-      } else {
+      } else if (text && text.trim()) {
         await ctx.telegram.sendMessage(ctx.chat.id, text, {
           entities,
           reply_markup: previewMarkup,
           link_preview_options: { is_disabled: true },
         } as any);
+      } else {
+        await safeReply(
+          ctx,
+          "⚠️ ပြသရန် content မရှိပါ။ ပြန်စတင်ရန် Cancel နှိပ်ပါ။"
+        );
       }
     } catch (err) {
       logger.error({ err }, "Broadcast preview failed");
