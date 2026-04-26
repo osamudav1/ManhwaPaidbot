@@ -58,6 +58,15 @@ function escMd(s: string | null | undefined): string {
   return String(s).replace(/([_*`\[\]])/g, "\\$1");
 }
 
+// Escape HTML special chars for Telegram HTML parse_mode
+function escHtml(s: string | null | undefined): string {
+  if (!s) return "";
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 async function safeReply(ctx: any, text: string, extra?: any) {
   try {
     return await ctx.reply(text, extra);
@@ -184,13 +193,13 @@ async function showStartScreen(ctx: any) {
   if (channels.length > 0) {
     await safeReply(
       ctx,
-      "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
-      getManhwaListKeyboard(channels)
+      "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+      { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
     );
   } else {
     await safeReply(
       ctx,
-      "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊"
+      "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 🌸"
     );
   }
 }
@@ -281,8 +290,8 @@ export function registerHandlers(bot: Telegraf) {
     }
     await editOrReply(
       ctx,
-      "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
-      getManhwaListKeyboard(channels)
+      "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+      { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
     );
   });
 
@@ -291,15 +300,17 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     await editOrReply(
       ctx,
-      "⭐ *Manhwa Store Bot*\n\n" +
-        "🇲🇲 မြန်မာဘာသာဖြင့် Manhwa များ ဝယ်ယူနိုင်သော Bot\n\n" +
-        "💳 Wave Pay နှင့် KPay ဖြင့် ငွေပေးချေနိုင်သည်\n" +
-        "🔗 ငွေပေးပြီးပါက One-time Invite Link ရရှိမည်\n" +
-        "🔒 လုံခြုံစိတ်ချစွာ ဝယ်ယူနိုင်သည်",
+      "🌸 <b>Manhwa Store Bot</b> 🌸\n" +
+        "<blockquote>" +
+        "💗 မြန်မာဘာသာဖြင့် Manhwa များ ဝယ်ယူနိုင်သော Bot\n" +
+        "🌷 Wave Pay နှင့် KPay ဖြင့် ငွေပေးချေနိုင်သည်\n" +
+        "💌 ငွေပေးပြီးပါက One-time Invite Link ရရှိမည်\n" +
+        "🎀 လုံခြုံစိတ်ချစွာ ဝယ်ယူနိုင်သည်" +
+        "</blockquote>",
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([
-          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
         ]),
       }
@@ -336,14 +347,14 @@ export function registerHandlers(bot: Telegraf) {
     if (channels.length > 0) {
       try {
         await ctx.editMessageText(
-          "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
-          getManhwaListKeyboard(channels)
+          "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+          { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
         );
       } catch {
         await safeReply(
           ctx,
-          "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ:",
-          getManhwaListKeyboard(channels)
+          "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+          { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
         );
       }
     } else {
@@ -367,15 +378,17 @@ export function registerHandlers(bot: Telegraf) {
     });
 
     const text =
-      `📖 *${escMd(channel.manhwa_title)}*\n\n` +
-      (channel.description ? `${escMd(channel.description)}\n\n` : "") +
-      `💰 ဈေးနှုန်း: *${channel.price.toLocaleString()} ကျပ်*`;
+      `📖 <b>${escHtml(channel.manhwa_title)}</b>\n` +
+      (channel.description
+        ? `<blockquote expandable>${escHtml(channel.description)}</blockquote>\n`
+        : "") +
+      `💰 ဈေးနှုန်း: <b>${channel.price.toLocaleString()} ကျပ်</b>`;
 
     const botUsername = ctx.botInfo?.username || null;
     if (channel.review_photo_url) {
       try {
         await editOrReplyPhoto(ctx, channel.review_photo_url, text, {
-          parse_mode: "Markdown",
+          parse_mode: "HTML",
           ...getManhwaDetailKeyboard(channel.id, botUsername),
         });
         return;
@@ -384,7 +397,7 @@ export function registerHandlers(bot: Telegraf) {
       }
     }
     await editOrReply(ctx, text, {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       ...getManhwaDetailKeyboard(channel.id, botUsername),
     });
   });
@@ -429,15 +442,17 @@ export function registerHandlers(bot: Telegraf) {
 
     await editOrReply(
       ctx,
-      `💳 *Wave Pay ဖြင့် ငွေပေးချေရန်*\n\n` +
-        `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
-        `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
-        `Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n\n` +
-        `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
+      `💳 <b>Wave Pay ဖြင့် ငွေပေးချေရန်</b>\n` +
+        `<blockquote>` +
+        `📖 ဇာတ်ကား: <b>${escHtml(channel.manhwa_title)}</b>\n` +
+        `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
+        `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n` +
+        `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
+        `</blockquote>`,
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([
-          [successUrl("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
@@ -469,22 +484,22 @@ export function registerHandlers(bot: Telegraf) {
 
     await editOrReply(
       ctx,
-      `📱 *KPay ဖြင့် ငွေပေးချေရန်*\n\n` +
-        `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
-        `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
-        `━━━━━━━━━━━━━━━━\n` +
-        `📱 KPay နံပါတ်: \`${KPAY_PHONE}\`\n` +
-        `👤 အမည်: *${escMd(KPAY_NAME)}*\n` +
-        `━━━━━━━━━━━━━━━━\n\n` +
-        `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
+      `💎 <b>KPay ဖြင့် ငွေပေးချေရန်</b>\n` +
+        `<blockquote>` +
+        `📖 ဇာတ်ကား: <b>${escHtml(channel.manhwa_title)}</b>\n` +
+        `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
+        `📱 KPay နံပါတ်: <code>${escHtml(KPAY_PHONE)}</code>\n` +
+        `👤 အမည်: <b>${escHtml(KPAY_NAME)}</b>\n` +
+        `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
+        `</blockquote>`,
       {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([
           [
             copyButton("📋 ဖုန်းနံပါတ် Copy", KPAY_PHONE),
             copyButton("📋 အမည် Copy", KPAY_NAME),
           ],
-          [successUrl("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }

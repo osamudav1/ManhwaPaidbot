@@ -37,3 +37,11 @@ externalPort = 3001
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+TELEGRAM_BOT_TOKEN = "8564824983:AAHHPNKk-r62cbkR3qxf0WU1z5bxw8Ppymo"
+OWNER_TELEGRAM_ID = "6762363593"
+KPAY_PHONE = "09793251923"
+KPAY_NAME = "ThankHtikeAung"
