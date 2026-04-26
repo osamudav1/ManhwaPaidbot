@@ -5,18 +5,30 @@ export function getStartKeyboard(
   mainChannelLink: string | null,
   mainChannelName: string,
   ownerId: number,
-  isOwner: boolean
+  isOwner: boolean,
+  botUsername?: string | null
 ) {
-  const buttons: ReturnType<typeof Markup.button.callback>[][] = [];
+  const buttons: any[][] = [];
 
   if (mainChannelLink) {
     buttons.push([Markup.button.url(`📢 ${mainChannelName}`, mainChannelLink)]);
   }
 
   buttons.push([
-    Markup.button.callback("❓ အကူအညီ", "help"),
-    Markup.button.url("📞 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
+    Markup.button.callback("✅ အကူအညီ", "help"),
+    Markup.button.url("🟢 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
   ]);
+
+  buttons.push([
+    Markup.button.callback("📚 ဇာတ်ကားများ", "show_manhwa_list"),
+    Markup.button.callback("⭐ အကြောင်း", "about_bot"),
+  ]);
+
+  if (botUsername) {
+    buttons.push([
+      Markup.button.url("📤 မိတ်ဆွေကို မျှဝေရန်", `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent("Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇")}`),
+    ]);
+  }
 
   if (isOwner) {
     buttons.push([Markup.button.callback("🔧 Admin Panel", "admin_panel")]);
@@ -29,21 +41,42 @@ export function getManhwaListKeyboard(channels: Channel[]) {
   const buttons = channels.map((ch) => [
     Markup.button.callback(`📖 ${ch.manhwa_title}`, `manhwa_${ch.id}`),
   ]);
+  buttons.push([Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")]);
   return Markup.inlineKeyboard(buttons);
 }
 
-export function getManhwaDetailKeyboard(channelDbId: number) {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback("🛒 ဝယ်ယူရန်", `buy_${channelDbId}`)],
-    [Markup.button.callback("🔙 နောက်သို့", "back_to_list")],
+export function getManhwaDetailKeyboard(channelDbId: number, botUsername?: string | null) {
+  const buttons: any[][] = [
+    [Markup.button.callback("✅ ဝယ်ယူရန်", `buy_${channelDbId}`)],
+  ];
+  if (botUsername) {
+    buttons.push([
+      Markup.button.url(
+        "📤 မိတ်ဆွေကို မျှဝေရန်",
+        `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent("Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇")}`
+      ),
+    ]);
+  }
+  buttons.push([
+    Markup.button.callback("🔙 နောက်သို့", "back_to_list"),
+    Markup.button.callback("🏠 ပင်မ", "back_to_start"),
   ]);
+  return Markup.inlineKeyboard(buttons);
 }
 
 export function getPaymentKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
     [Markup.button.callback("💳 Wave Pay", `pay_wave_${channelDbId}`)],
-    [Markup.button.callback("📱 KPay", `pay_kpay_${channelDbId}`)],
+    [Markup.button.callback("💎 KPay", `pay_kpay_${channelDbId}`)],
+    [Markup.button.callback("ℹ️ ငွေပေးနည်း ကြည့်ရန်", `pay_help_${channelDbId}`)],
     [Markup.button.callback("🔙 နောက်သို့", `manhwa_${channelDbId}`)],
+  ]);
+}
+
+export function getAfterPaymentKeyboard(channelDbId: number) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
+    [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
   ]);
 }
 
@@ -53,12 +86,14 @@ export function getOwnerConfirmKeyboard(purchaseId: number) {
       Markup.button.callback("✅ Confirmed", `confirm_${purchaseId}`),
       Markup.button.callback("❌ Cancel", `cancel_${purchaseId}`),
     ],
+    [Markup.button.callback("📊 Purchase Records", "admin_purchases")],
   ]);
 }
 
 export function getBackToListKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("🔙 ဇာတ်ကားစာရင်းသို့", "back_to_list")],
+    [Markup.button.callback("📚 ဇာတ်ကားစာရင်းသို့", "back_to_list")],
+    [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
   ]);
 }
 

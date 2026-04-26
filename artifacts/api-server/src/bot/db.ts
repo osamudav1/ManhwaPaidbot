@@ -173,6 +173,14 @@ export async function cancelPurchase(id: number): Promise<void> {
   await query("UPDATE purchases SET status = 'cancelled' WHERE id = $1", [id]);
 }
 
+export async function getPurchaseByInviteLink(link: string): Promise<Purchase | null> {
+  const res = await query(
+    "SELECT * FROM purchases WHERE invite_link = $1 ORDER BY id DESC LIMIT 1",
+    [link]
+  );
+  return (res.rows[0] as unknown as Purchase) || null;
+}
+
 export async function getRecentPurchases(limit: number = 10): Promise<Purchase[]> {
   const res = await query(
     "SELECT * FROM purchases ORDER BY created_at DESC LIMIT $1",

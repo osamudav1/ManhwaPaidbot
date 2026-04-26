@@ -14,7 +14,15 @@ registerHandlers(bot);
 
 export async function startBot() {
   try {
-    await bot.launch();
+    await bot.launch({
+      allowedUpdates: [
+        "message",
+        "callback_query",
+        "chat_member",
+        "my_chat_member",
+        "chat_join_request",
+      ],
+    });
     logger.info("Telegram bot started successfully");
 
     process.once("SIGINT", () => {

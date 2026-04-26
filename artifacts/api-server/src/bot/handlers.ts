@@ -16,6 +16,7 @@ import {
   removeChannel,
   updatePurchaseScreenshot,
   getRecentPurchases,
+  getPurchaseByInviteLink,
 } from "./db.js";
 import {
   getStartKeyboard,
@@ -59,27 +60,50 @@ async function safeReply(ctx: any, text: string, extra?: any) {
   }
 }
 
+function parseEntities(json: string | null): any[] | undefined {
+  if (!json) return undefined;
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) && arr.length > 0 ? arr : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function showStartScreen(ctx: any) {
   const userId = ctx.from.id;
   clearUserState(userId);
 
   const welcomeCaption = await getBotSetting("welcome_caption");
+  const welcomeEntitiesJson = await getBotSetting("welcome_caption_entities");
   const welcomePhoto = await getBotSetting("welcome_photo_url");
   const mainChannelLink = await getBotSetting("main_channel_link");
   const mainChannelName = (await getBotSetting("main_channel_name")) || "Main Channel";
   const channels = await getAllActiveChannels();
+  const botUsername = ctx.botInfo?.username || null;
 
   const caption = welcomeCaption || "မင်္ဂလာပါ! Manhwa Store မှ ကြိုဆိုပါသည်။";
-  const keyboard = getStartKeyboard(mainChannelLink, mainChannelName, OWNER_ID, isOwner(userId));
+  const entities = parseEntities(welcomeEntitiesJson);
+  const keyboard = getStartKeyboard(
+    mainChannelLink,
+    mainChannelName,
+    OWNER_ID,
+    isOwner(userId),
+    botUsername
+  );
 
   if (welcomePhoto) {
     try {
-      await ctx.replyWithPhoto(welcomePhoto, { caption, ...keyboard });
+      await ctx.replyWithPhoto(welcomePhoto, {
+        caption,
+        ...(entities ? { caption_entities: entities } : {}),
+        ...keyboard,
+      });
     } catch {
-      await safeReply(ctx, caption, keyboard);
+      await safeReply(ctx, caption, { ...(entities ? { entities } : {}), ...keyboard });
     }
   } else {
-    await safeReply(ctx, caption, keyboard);
+    await safeReply(ctx, caption, { ...(entities ? { entities } : {}), ...keyboard });
   }
 
   if (channels.length > 0) {
@@ -160,6 +184,72 @@ export function registerHandlers(bot: Telegraf) {
     );
   });
 
+  // ===== Back to start (home) =====
+  bot.action("back_to_start", async (ctx) => {
+    await ctx.answerCbQuery();
+    try {
+      await ctx.deleteMessage();
+    } catch {}
+    await showStartScreen(ctx);
+  });
+
+  // ===== Show manhwa list (separate button) =====
+  bot.action("show_manhwa_list", async (ctx) => {
+    await ctx.answerCbQuery();
+    const channels = await getAllActiveChannels();
+    if (channels.length === 0) {
+      await safeReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊");
+      return;
+    }
+    await safeReply(
+      ctx,
+      "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
+      getManhwaListKeyboard(channels)
+    );
+  });
+
+  // ===== About bot =====
+  bot.action("about_bot", async (ctx) => {
+    await ctx.answerCbQuery();
+    await safeReply(
+      ctx,
+      "⭐ *Manhwa Store Bot*\n\n" +
+        "🇲🇲 မြန်မာဘာသာဖြင့် Manhwa များ ဝယ်ယူနိုင်သော Bot\n\n" +
+        "💳 Wave Pay နှင့် KPay ဖြင့် ငွေပေးချေနိုင်သည်\n" +
+        "🔗 ငွေပေးပြီးပါက One-time Invite Link ရရှိမည်\n" +
+        "🔒 လုံခြုံစိတ်ချစွာ ဝယ်ယူနိုင်သည်",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
+        ]),
+      }
+    );
+  });
+
+  // ===== Payment help =====
+  bot.action(/^pay_help_(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    await safeReply(
+      ctx,
+      "ℹ️ *ငွေပေးချေနည်း လမ်းညွှန်*\n\n" +
+        "1️⃣ Wave Pay (သို့) KPay ထဲမှ တစ်ခု ရွေးပါ\n" +
+        "2️⃣ ပြသထားသော ဖုန်းနံပါတ်/နာမည်သို့ ငွေလွှဲပါ\n" +
+        "3️⃣ လွှဲပြီးနောက် Screenshot ကို ပြန်ပို့ပါ\n" +
+        "4️⃣ Owner အတည်ပြုပြီးနောက် Channel Link ရပါမည်\n\n" +
+        "⚠️ Screenshot မထင်ရှားပါက ပြန်ပို့ခိုင်းနိုင်သည်",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("🔙 ငွေပေးနည်း ရွေးရန်", `buy_${channelDbId}`)],
+          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+        ]),
+      }
+    );
+  });
+
   // ===== Back to manhwa list =====
   bot.action("back_to_list", async (ctx) => {
     await ctx.answerCbQuery();
@@ -203,12 +293,13 @@ export function registerHandlers(bot: Telegraf) {
       (channel.description ? `${escMd(channel.description)}\n\n` : "") +
       `💰 ဈေးနှုန်း: *${channel.price.toLocaleString()} ကျပ်*`;
 
+    const botUsername = ctx.botInfo?.username || null;
     if (channel.review_photo_url) {
       try {
         await ctx.replyWithPhoto(channel.review_photo_url, {
           caption: text,
           parse_mode: "Markdown",
-          ...getManhwaDetailKeyboard(channel.id),
+          ...getManhwaDetailKeyboard(channel.id, botUsername),
         });
         return;
       } catch (err) {
@@ -217,7 +308,7 @@ export function registerHandlers(bot: Telegraf) {
     }
     await safeReply(ctx, text, {
       parse_mode: "Markdown",
-      ...getManhwaDetailKeyboard(channel.id),
+      ...getManhwaDetailKeyboard(channel.id, botUsername),
     });
   });
 
@@ -676,14 +767,19 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery("Preview...");
     const photo = await getBotSetting("welcome_photo_url");
     const caption = (await getBotSetting("welcome_caption")) || "မင်္ဂလာပါ!";
+    const entities = parseEntities(await getBotSetting("welcome_caption_entities"));
     if (photo) {
       try {
-        await ctx.replyWithPhoto(photo, { caption });
+        await ctx.replyWithPhoto(photo, {
+          caption,
+          ...(entities ? { caption_entities: entities } : {}),
+        });
       } catch {
-        await safeReply(ctx, `Caption: ${caption}\n\n(Photo error)`);
+        await safeReply(ctx, caption, entities ? { entities } : undefined);
+        await safeReply(ctx, "(Photo error)");
       }
     } else {
-      await safeReply(ctx, `(No Photo)\n\n${caption}`);
+      await safeReply(ctx, caption, entities ? { entities } : undefined);
     }
   });
 
@@ -1109,11 +1205,18 @@ export function registerHandlers(bot: Telegraf) {
       return;
     }
 
-    // ===== Welcome Caption =====
+    // ===== Welcome Caption (preserve formatting via entities) =====
     if (state.action === "set_welcome_caption") {
       await setBotSetting("welcome_caption", text);
+      const ents = (ctx.message as { entities?: any[] } | undefined)?.entities;
+      if (ents && ents.length > 0) {
+        await setBotSetting("welcome_caption_entities", JSON.stringify(ents));
+      } else {
+        await deleteBotSetting("welcome_caption_entities");
+      }
       clearUserState(userId);
-      await safeReply(ctx, "✅ Welcome Caption သိမ်းပြီး!", Markup.inlineKeyboard([
+      await safeReply(ctx, "✅ Welcome Caption သိမ်းပြီး! (formatting ပါ ထိန်းထားသည်)", Markup.inlineKeyboard([
+        [Markup.button.callback("👁️ Preview", "preview_welcome")],
         [Markup.button.callback("🔙 Welcome Settings", "admin_welcome")],
       ]));
       return;
@@ -1189,5 +1292,58 @@ export function registerHandlers(bot: Telegraf) {
         `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
       { parse_mode: "Markdown", ...getCancelKeyboard() }
     );
+  });
+
+  // ===== Auto-revoke 1-time invite link after use =====
+  bot.on("chat_member", async (ctx) => {
+    try {
+      const upd = ctx.update.chat_member;
+      const newStatus = upd.new_chat_member?.status;
+      const oldStatus = upd.old_chat_member?.status;
+      const inviteLink = upd.invite_link?.invite_link;
+      const chatId = upd.chat?.id;
+      if (!inviteLink || !chatId) return;
+
+      const justJoined =
+        (oldStatus === "left" || oldStatus === "kicked") &&
+        (newStatus === "member" ||
+          newStatus === "restricted" ||
+          newStatus === "administrator" ||
+          newStatus === "creator");
+      if (!justJoined) return;
+
+      const purchase = await getPurchaseByInviteLink(inviteLink);
+      if (!purchase) return;
+
+      try {
+        await ctx.telegram.revokeChatInviteLink(chatId, inviteLink);
+        logger.info(
+          { chatId, inviteLink, purchaseId: purchase.id, userId: upd.new_chat_member.user.id },
+          "Auto-revoked 1-time invite link after user joined"
+        );
+      } catch (err) {
+        logger.warn({ err, chatId, inviteLink }, "Failed to revoke invite link");
+      }
+    } catch (err) {
+      logger.error({ err }, "chat_member handler error");
+    }
+  });
+
+  // ===== Track when bot itself is added/removed from a channel =====
+  bot.on("my_chat_member", async (ctx) => {
+    try {
+      const upd = ctx.update.my_chat_member;
+      logger.info(
+        {
+          chatId: upd.chat.id,
+          chatTitle: (upd.chat as { title?: string }).title,
+          oldStatus: upd.old_chat_member?.status,
+          newStatus: upd.new_chat_member?.status,
+        },
+        "my_chat_member update"
+      );
+    } catch (err) {
+      logger.error({ err }, "my_chat_member handler error");
+    }
   });
 }
