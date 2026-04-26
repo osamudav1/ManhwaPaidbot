@@ -1,6 +1,7 @@
 import { Telegraf } from "telegraf";
 import { logger } from "../lib/logger.js";
 import { registerHandlers } from "./handlers.js";
+import { ensureBotSchema } from "./init-db.js";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -14,6 +15,7 @@ registerHandlers(bot);
 
 export async function startBot() {
   try {
+    await ensureBotSchema();
     await bot.launch({
       allowedUpdates: [
         "message",
