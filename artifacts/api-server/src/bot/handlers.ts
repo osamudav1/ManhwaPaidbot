@@ -45,6 +45,12 @@ function isOwner(userId: number): boolean {
   return userId === OWNER_ID;
 }
 
+// Escape Telegram legacy Markdown special chars in user-provided text
+function escMd(s: string | null | undefined): string {
+  if (!s) return "";
+  return String(s).replace(/([_*`\[\]])/g, "\\$1");
+}
+
 async function safeReply(ctx: any, text: string, extra?: any) {
   try {
     return await ctx.reply(text, extra);
@@ -193,8 +199,8 @@ export function registerHandlers(bot: Telegraf) {
     });
 
     const text =
-      `📖 *${channel.manhwa_title}*\n\n` +
-      (channel.description ? `${channel.description}\n\n` : "") +
+      `📖 *${escMd(channel.manhwa_title)}*\n\n` +
+      (channel.description ? `${escMd(channel.description)}\n\n` : "") +
       `💰 ဈေးနှုန်း: *${channel.price.toLocaleString()} ကျပ်*`;
 
     if (channel.review_photo_url) {
@@ -224,7 +230,7 @@ export function registerHandlers(bot: Telegraf) {
       await safeReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
       return;
     }
-    await safeReply(ctx, `💳 *${channel.manhwa_title}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
+    await safeReply(ctx, `💳 *${escMd(channel.manhwa_title)}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
       parse_mode: "Markdown",
       ...getPaymentKeyboard(channel.id),
     });
@@ -256,7 +262,7 @@ export function registerHandlers(bot: Telegraf) {
     await safeReply(
       ctx,
       `💳 *Wave Pay ဖြင့် ငွေပေးချေရန်*\n\n` +
-        `📖 ဇာတ်ကား: *${channel.manhwa_title}*\n` +
+        `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
         `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
         `Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n\n` +
         `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
@@ -295,11 +301,11 @@ export function registerHandlers(bot: Telegraf) {
     await safeReply(
       ctx,
       `📱 *KPay ဖြင့် ငွေပေးချေရန်*\n\n` +
-        `📖 ဇာတ်ကား: *${channel.manhwa_title}*\n` +
+        `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
         `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `📱 KPay နံပါတ်: \`${KPAY_PHONE}\`\n` +
-        `👤 အမည်: *${KPAY_NAME}*\n` +
+        `👤 အမည်: *${escMd(KPAY_NAME)}*\n` +
         `━━━━━━━━━━━━━━━━\n\n` +
         `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
       { parse_mode: "Markdown" }
@@ -361,13 +367,11 @@ export function registerHandlers(bot: Telegraf) {
       try {
         if ((ctx.callbackQuery.message as any)?.caption !== undefined) {
           await ctx.editMessageCaption(
-            originalCaption + `\n\n✅ *Confirmed!*\n${inviteLink}`,
-            { parse_mode: "Markdown" }
+            originalCaption + `\n\n✅ Confirmed!\n${inviteLink}`
           );
         } else {
           await ctx.editMessageText(
-            originalCaption + `\n\n✅ *Confirmed!*\n${inviteLink}`,
-            { parse_mode: "Markdown" }
+            originalCaption + `\n\n✅ Confirmed!\n${inviteLink}`
           );
         }
       } catch {
@@ -529,9 +533,9 @@ export function registerHandlers(bot: Telegraf) {
     }
 
     const text =
-      `📖 *${channel.manhwa_title}*\n\n` +
+      `📖 *${escMd(channel.manhwa_title)}*\n\n` +
       `🆔 Channel ID: \`${channel.channel_id}\`\n` +
-      `📛 Channel Name: ${channel.channel_name}\n` +
+      `📛 Channel Name: ${escMd(channel.channel_name)}\n` +
       `💰 ဈေးနှုန်း: ${channel.price.toLocaleString()} ကျပ်\n` +
       `🖼️ Cover: ${channel.cover_photo_url ? "✅" : "❌"}\n` +
       `📸 Review: ${channel.review_photo_url ? "✅" : "❌"}\n` +
@@ -598,7 +602,7 @@ export function registerHandlers(bot: Telegraf) {
     if (!channel) return;
     try {
       await ctx.editMessageText(
-        `🗑️ *${channel.manhwa_title}* ကို ဖျက်မည်လား?\n\nဤ Manhwa ကို User စာရင်းမှ ဖယ်ထုတ်ပါမည်။`,
+        `🗑️ *${escMd(channel.manhwa_title)}* ကို ဖျက်မည်လား?\n\nဤ Manhwa ကို User စာရင်းမှ ဖယ်ထုတ်ပါမည်။`,
         { parse_mode: "Markdown", ...getDeleteConfirmKeyboard(channelDbId) }
       );
     } catch {
@@ -615,7 +619,7 @@ export function registerHandlers(bot: Telegraf) {
     await removeChannel(channel.channel_id);
     try {
       await ctx.editMessageText(
-        `✅ *${channel.manhwa_title}* ကို ဖျက်ပြီးပါပြီ။`,
+        `✅ *${escMd(channel.manhwa_title)}* ကို ဖျက်ပြီးပါပြီ။`,
         {
           parse_mode: "Markdown",
           ...Markup.inlineKeyboard([
@@ -635,10 +639,13 @@ export function registerHandlers(bot: Telegraf) {
     clearUserState(ctx.from.id);
     const photo = await getBotSetting("welcome_photo_url");
     const caption = await getBotSetting("welcome_caption");
+    const captionPreview = caption
+      ? escMd(caption.slice(0, 200)) + (caption.length > 200 ? "..." : "")
+      : "(မထည့်ရသေး)";
     const text =
       `🎨 *Welcome Settings*\n\n` +
       `🖼️ Photo: ${photo ? "✅ ထည့်ထားပြီး" : "❌ မထည့်ရသေး"}\n` +
-      `📝 Caption:\n${caption ? `_${caption.slice(0, 200)}${caption.length > 200 ? "..." : ""}_` : "_မထည့်ရသေး_"}`;
+      `📝 Caption:\n${captionPreview}`;
 
     try {
       await ctx.editMessageText(text, {
@@ -689,8 +696,8 @@ export function registerHandlers(bot: Telegraf) {
     const name = await getBotSetting("main_channel_name");
     const text =
       `📢 *Main Channel Settings*\n\n` +
-      `🔗 Link: ${link ? `\`${link}\`` : "_မထည့်ရသေး_"}\n` +
-      `📛 Name: ${name ? `*${name}*` : "_မထည့်ရသေး_"}`;
+      `🔗 Link: ${link ? `\`${link}\`` : "(မထည့်ရသေး)"}\n` +
+      `📛 Name: ${name ? `*${escMd(name)}*` : "(မထည့်ရသေး)"}`;
 
     try {
       await ctx.editMessageText(text, {
@@ -821,12 +828,12 @@ export function registerHandlers(bot: Telegraf) {
     const text =
       `📋 *သိမ်းမည့် အချက်အလက်များ*\n\n` +
       `🆔 Channel ID: \`${state.draftChannelId}\`\n` +
-      `📛 Channel Name: ${state.draftChannelName || "_(Manhwa title နှင့် တူ)_"}\n` +
-      `📖 Manhwa Title: *${state.draftManhwaTitle}*\n` +
+      `📛 Channel Name: ${escMd(state.draftChannelName) || "(Manhwa title နှင့် တူ)"}\n` +
+      `📖 Manhwa Title: *${escMd(state.draftManhwaTitle)}*\n` +
       `💰 ဈေးနှုန်း: ${state.draftPrice?.toLocaleString()} ကျပ်\n` +
       `🖼️ Cover: ${state.draftCoverFileId ? "✅" : "❌"}\n` +
       `📸 Review: ${state.draftReviewFileId ? "✅" : "❌"}\n` +
-      `📝 ဖော်ပြချက်: ${state.draftDescription ? `\n_${state.draftDescription}_` : "❌"}\n\n` +
+      `📝 ဖော်ပြချက်: ${state.draftDescription ? `\n${escMd(state.draftDescription)}` : "❌"}\n\n` +
       `သိမ်းမည်လား?`;
     await safeReply(ctx, text, { parse_mode: "Markdown", ...getAddManhwaConfirmKeyboard() });
   }
@@ -852,7 +859,7 @@ export function registerHandlers(bot: Telegraf) {
         await safeReply(
           ctx,
           `✅ Channel ချိတ်ဆက်ပြီး!\n` +
-            `📛 Channel: ${channelName || channelId}\n` +
+            `📛 Channel: ${escMd(channelName) || channelId}\n` +
             `🆔 ID: \`${channelId}\`\n\n` +
             `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
           { parse_mode: "Markdown", ...getCancelKeyboard() }
@@ -937,18 +944,20 @@ export function registerHandlers(bot: Telegraf) {
       );
 
       const userMention = ctx.from.username
-        ? `@${ctx.from.username}`
-        : `[${ctx.from.first_name || "User"}](tg://user?id=${userId})`;
+        ? `@${escMd(ctx.from.username)}`
+        : `[${escMd(ctx.from.first_name || "User")}](tg://user?id=${userId})`;
+
+      const fullName = `${ctx.from.first_name || "N/A"}${ctx.from.last_name ? " " + ctx.from.last_name : ""}`;
 
       const ownerMsg =
         `🛍️ *Purchase Request*\n\n` +
-        `📖 ဇာတ်ကား: *${manhwaTitle}*\n` +
+        `📖 ဇာတ်ကား: *${escMd(manhwaTitle)}*\n` +
         `💳 ငွေပေးချေမှု: *${state.paymentMethod === "kpay" ? "KPay" : "Wave Pay"}*\n` +
         `💰 ဈေးနှုန်း: *${channel?.price?.toLocaleString() || "N/A"} ကျပ်*\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `👤 User: ${userMention}\n` +
         `🆔 User ID: \`${userId}\`\n` +
-        `📛 အမည်: ${ctx.from.first_name || "N/A"}${ctx.from.last_name ? " " + ctx.from.last_name : ""}\n` +
+        `📛 အမည်: ${escMd(fullName)}\n` +
         `📢 Channel ID: \`${state.selectedChannelId || "N/A"}\`\n` +
         `🧾 Purchase ID: #${purchaseId}\n` +
         `━━━━━━━━━━━━━━━━`;
@@ -1026,8 +1035,8 @@ export function registerHandlers(bot: Telegraf) {
       await safeReply(
         ctx,
         `✅ Channel ချိတ်ဆက်ပြီး!\n` +
-          `📛 Channel: ${channelName || channelId}\n\n` +
-          `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:\n_(ဥပမာ: Solo Leveling)_`,
+          `📛 Channel: ${escMd(channelName) || channelId}\n\n` +
+          `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:\n(ဥပမာ: Solo Leveling)`,
         { parse_mode: "Markdown", ...getCancelKeyboard() }
       );
       return;
@@ -1037,7 +1046,7 @@ export function registerHandlers(bot: Telegraf) {
       updateUserState(userId, { action: "add_step_price", draftManhwaTitle: text.trim() });
       await safeReply(
         ctx,
-        `✅ ဇာတ်ကားအမည်: *${text.trim()}*\n\n💰 *Step 3/5: ဈေးနှုန်း*\n\nဈေးနှုန်း (ကျပ်) ရိုက်ပါ:\n_(ဥပမာ: 3000)_`,
+        `✅ ဇာတ်ကားအမည်: *${escMd(text.trim())}*\n\n💰 *Step 3/5: ဈေးနှုန်း*\n\nဈေးနှုန်း (ကျပ်) ရိုက်ပါ:\n(ဥပမာ: 3000)`,
         { parse_mode: "Markdown", ...getCancelKeyboard() }
       );
       return;
@@ -1052,7 +1061,7 @@ export function registerHandlers(bot: Telegraf) {
       updateUserState(userId, { action: "add_step_cover", draftPrice: price });
       await safeReply(
         ctx,
-        `✅ ဈေးနှုန်း: *${price.toLocaleString()} ကျပ်*\n\n🖼️ *Step 4/5: Cover Photo*\n\nCover Photo ပို့ပါ\n(သို့မဟုတ် Skip နှိပ်ပါ)`,
+        `✅ ဈေးနှုန်း: *${price.toLocaleString()} ကျပ်*\n\n🖼️ *Step 4/6: Cover Photo*\n\nCover Photo ပို့ပါ\n(သို့မဟုတ် Skip နှိပ်ပါ)`,
         { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_cover") }
       );
       return;
@@ -1175,7 +1184,7 @@ export function registerHandlers(bot: Telegraf) {
     await safeReply(
       ctx,
       `✅ Channel ချိတ်ဆက်ပြီး!\n` +
-        `📛 Channel: ${channelName || channelId}\n` +
+        `📛 Channel: ${escMd(channelName) || channelId}\n` +
         `🆔 ID: \`${channelId}\`\n\n` +
         `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
       { parse_mode: "Markdown", ...getCancelKeyboard() }
