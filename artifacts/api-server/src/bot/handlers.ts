@@ -670,11 +670,11 @@ export function registerHandlers(bot: Telegraf) {
         "3️⃣ ငွေပေးချေမှု နည်းလမ်း ရွေးပါ (Wave / KPay)\n" +
         "4️⃣ ပြေစာ Screenshot ပို့ပါ\n" +
         "5️⃣ Owner မှ အတည်ပြုပြီးနောက် Channel Invite Link ရပါမည်\n\n" +
-        "❓ အကူအညီ လိုအပ်ပါက Owner ကို ဆက်သွယ်ပါ",
+        "❓ အကူအညီ လိုအပ်ပါက Admin ကို ဆက်သွယ်ပါ",
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("📞 Admin ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [
             primaryCallback("📚 Manhwaစာရင်း", "back_to_list"),
             primaryCallback("🏠 ပင်မ", "back_to_start"),
@@ -723,7 +723,7 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "HTML",
         ...Markup.inlineKeyboard([
-          [successUrl("💌 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Admin ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
         ]),
       }
@@ -746,7 +746,7 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [primaryCallback("🔙 ငွေပေးနည်း ရွေးရန်", `buy_${channelDbId}`)],
-          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("📞 Admin ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
         ]),
       }
     );
@@ -859,13 +859,13 @@ export function registerHandlers(bot: Telegraf) {
         `<blockquote expandable>` +
         `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
-        `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n` +
+        `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Admin ကို ဆက်သွယ်ပါ 👇\n` +
         `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
         `</blockquote>`,
       {
         parse_mode: "HTML",
         ...Markup.inlineKeyboard([
-          [successUrl("💌 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Admin ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
@@ -912,7 +912,7 @@ export function registerHandlers(bot: Telegraf) {
             copyButton("📋 ဖုန်းနံပါတ် Copy", KPAY_PHONE),
             copyButton("📋 အမည် Copy", KPAY_NAME),
           ],
-          [successUrl("💌 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("💌 Admin ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
@@ -961,7 +961,7 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📞 Owner ကို ဆက်သွယ်ရန်", url: `tg://user?id=${OWNER_ID}`, style: "success" } as any],
+            [{ text: "📞 Admin ကို ဆက်သွယ်ရန်", url: `tg://user?id=${OWNER_ID}`, style: "success" } as any],
           ],
         },
       });
@@ -1017,7 +1017,7 @@ export function registerHandlers(bot: Telegraf) {
     try {
       await bot.telegram.sendMessage(
         parseInt(purchase.user_id, 10),
-        `❌ Purchase #${purchaseId} ကို ပယ်ဖျက်လိုက်ပါသည်။\nမေးခွန်းများ ရှိပါက Owner ကို ဆက်သွယ်ပါ။`
+        `❌ Purchase #${purchaseId} ကို ပယ်ဖျက်လိုက်ပါသည်။\nမေးခွန်းများ ရှိပါက Admin ကို ဆက်သွယ်ပါ။`
       );
     } catch (err) {
       logger.error({ err }, "Failed to notify user of cancellation");
