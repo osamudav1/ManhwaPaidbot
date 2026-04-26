@@ -3,7 +3,7 @@ import { logger } from "../lib/logger.js";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channels (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel_id TEXT UNIQUE NOT NULL,
   channel_name TEXT NOT NULL,
   channel_username TEXT,
@@ -12,12 +12,12 @@ CREATE TABLE IF NOT EXISTS channels (
   cover_photo_url TEXT,
   review_photo_url TEXT,
   description TEXT,
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS purchases (
-  id SERIAL PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
   username TEXT,
   first_name TEXT,
@@ -26,30 +26,46 @@ CREATE TABLE IF NOT EXISTS purchases (
   screenshot_file_id TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   invite_link TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS bot_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
-ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS welcome_caption_entities TEXT;
 
 CREATE TABLE IF NOT EXISTS bot_users (
   telegram_id TEXT PRIMARY KEY,
   username TEXT,
   first_name TEXT,
   last_name TEXT,
-  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  is_blocked BOOLEAN NOT NULL DEFAULT false
+  joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  is_blocked INTEGER NOT NULL DEFAULT 0
 );
 `;
 
+async function ensureColumn(
+  table: string,
+  column: string,
+  ddl: string,
+): Promise<void> {
+  const info = await pool.query(`PRAGMA table_info(${table})`);
+  const exists = info.rows.some(
+    (r) => (r as { name?: string }).name === column,
+  );
+  if (!exists) {
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
 export async function ensureBotSchema(): Promise<void> {
-  const p = pool as unknown as { query: (sql: string) => Promise<unknown> };
-  await p.query(SCHEMA_SQL);
-  logger.info("Bot DB schema ensured");
+  await pool.query(SCHEMA_SQL);
+  await ensureColumn(
+    "bot_settings",
+    "welcome_caption_entities",
+    "welcome_caption_entities TEXT",
+  );
+  logger.info("Bot DB schema ensured (sqlite)");
 }

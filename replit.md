@@ -11,7 +11,7 @@ pnpm workspace monorepo using TypeScript. Contains a Telegram Manhwa Bot (Burmes
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
+- **Database**: SQLite (temporary, via Node 24's built-in `node:sqlite`). File at `SQLITE_PATH` env var (defaults to `./data/manhwa-bot.sqlite`). The `lib/db` package exposes a thin pg-compatible `pool` shim so existing code keeps working unchanged. Note: SQLite is ephemeral on Render's free tier — restarts wipe data unless a persistent disk is attached.
 - **Telegram Bot**: Telegraf (long polling)
 
 ## Telegram Bot Features
