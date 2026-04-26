@@ -60,6 +60,69 @@ async function safeReply(ctx: any, text: string, extra?: any) {
   }
 }
 
+// Edit current message in place when possible, fallback to sending a new one.
+// Auto-detects whether the prior message has media (use editMessageCaption)
+// or is text (use editMessageText). Avoids cluttering chat with new bubbles.
+async function editOrReply(ctx: any, text: string, extra?: any) {
+  const msg = ctx.callbackQuery?.message as any;
+  if (msg) {
+    const hasMedia = !!(msg.photo || msg.video || msg.document || msg.animation);
+    try {
+      if (hasMedia) {
+        await ctx.editMessageCaption(text, extra);
+      } else {
+        await ctx.editMessageText(text, extra);
+      }
+      return;
+    } catch {
+      // fall through to safeReply
+    }
+  }
+  await safeReply(ctx, text, extra);
+}
+
+// For navigating from a text screen to a photo screen (e.g. manhwa detail):
+// - If previous message already has media, swap it via editMessageMedia
+// - Otherwise delete the old text message and send a fresh photo
+async function editOrReplyPhoto(
+  ctx: any,
+  photoFileId: string,
+  caption: string,
+  extra: any
+) {
+  const msg = ctx.callbackQuery?.message as any;
+  if (msg) {
+    const hasMedia = !!(msg.photo || msg.video);
+    try {
+      if (hasMedia) {
+        await ctx.editMessageMedia(
+          {
+            type: "photo",
+            media: photoFileId,
+            caption,
+            ...(extra?.parse_mode ? { parse_mode: extra.parse_mode } : {}),
+          },
+          { reply_markup: extra?.reply_markup }
+        );
+        return;
+      } else {
+        try {
+          await ctx.deleteMessage();
+        } catch {}
+        await ctx.replyWithPhoto(photoFileId, { caption, ...extra });
+        return;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  try {
+    await ctx.replyWithPhoto(photoFileId, { caption, ...extra });
+  } catch {
+    await safeReply(ctx, caption, extra);
+  }
+}
+
 function parseEntities(json: string | null): any[] | undefined {
   if (!json) return undefined;
   try {
@@ -165,7 +228,7 @@ export function registerHandlers(bot: Telegraf) {
   // ===== Help =====
   bot.action("help", async (ctx) => {
     await ctx.answerCbQuery();
-    await safeReply(
+    await editOrReply(
       ctx,
       "📖 *အသုံးပြုနည်း*\n\n" +
         "1️⃣ ဇာတ်ကားစာရင်းမှ ကြိုက်သောကားကို ရွေးပါ\n" +
@@ -178,7 +241,10 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
-          [Markup.button.callback("🔙 ပင်မမျက်နှာသို့", "back_to_list")],
+          [
+            Markup.button.callback("📚 ဇာတ်ကားစာရင်း", "back_to_list"),
+            Markup.button.callback("🏠 ပင်မ", "back_to_start"),
+          ],
         ]),
       }
     );
@@ -198,10 +264,10 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     const channels = await getAllActiveChannels();
     if (channels.length === 0) {
-      await safeReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊");
+      await editOrReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊");
       return;
     }
-    await safeReply(
+    await editOrReply(
       ctx,
       "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
       getManhwaListKeyboard(channels)
@@ -211,7 +277,7 @@ export function registerHandlers(bot: Telegraf) {
   // ===== About bot =====
   bot.action("about_bot", async (ctx) => {
     await ctx.answerCbQuery();
-    await safeReply(
+    await editOrReply(
       ctx,
       "⭐ *Manhwa Store Bot*\n\n" +
         "🇲🇲 မြန်မာဘာသာဖြင့် Manhwa များ ဝယ်ယူနိုင်သော Bot\n\n" +
@@ -232,7 +298,7 @@ export function registerHandlers(bot: Telegraf) {
   bot.action(/^pay_help_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
     const channelDbId = parseInt(ctx.match[1], 10);
-    await safeReply(
+    await editOrReply(
       ctx,
       "ℹ️ *ငွေပေးချေနည်း လမ်းညွှန်*\n\n" +
         "1️⃣ Wave Pay (သို့) KPay ထဲမှ တစ်ခု ရွေးပါ\n" +
@@ -296,8 +362,7 @@ export function registerHandlers(bot: Telegraf) {
     const botUsername = ctx.botInfo?.username || null;
     if (channel.review_photo_url) {
       try {
-        await ctx.replyWithPhoto(channel.review_photo_url, {
-          caption: text,
+        await editOrReplyPhoto(ctx, channel.review_photo_url, text, {
           parse_mode: "Markdown",
           ...getManhwaDetailKeyboard(channel.id, botUsername),
         });
@@ -306,7 +371,7 @@ export function registerHandlers(bot: Telegraf) {
         logger.error({ err }, "Failed to send review photo");
       }
     }
-    await safeReply(ctx, text, {
+    await editOrReply(ctx, text, {
       parse_mode: "Markdown",
       ...getManhwaDetailKeyboard(channel.id, botUsername),
     });
@@ -318,10 +383,10 @@ export function registerHandlers(bot: Telegraf) {
     const channelDbId = parseInt(ctx.match[1], 10);
     const channel = await getChannelById(channelDbId);
     if (!channel) {
-      await safeReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
+      await editOrReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
       return;
     }
-    await safeReply(ctx, `💳 *${escMd(channel.manhwa_title)}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
+    await editOrReply(ctx, `💳 *${escMd(channel.manhwa_title)}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
       parse_mode: "Markdown",
       ...getPaymentKeyboard(channel.id),
     });
@@ -350,7 +415,7 @@ export function registerHandlers(bot: Telegraf) {
       purchaseId: purchase.id,
     });
 
-    await safeReply(
+    await editOrReply(
       ctx,
       `💳 *Wave Pay ဖြင့် ငွေပေးချေရန်*\n\n` +
         `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
@@ -361,6 +426,7 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
     );
@@ -389,7 +455,7 @@ export function registerHandlers(bot: Telegraf) {
       purchaseId: purchase.id,
     });
 
-    await safeReply(
+    await editOrReply(
       ctx,
       `📱 *KPay ဖြင့် ငွေပေးချေရန်*\n\n` +
         `📖 ဇာတ်ကား: *${escMd(channel.manhwa_title)}*\n` +
@@ -399,7 +465,13 @@ export function registerHandlers(bot: Telegraf) {
         `👤 အမည်: *${escMd(KPAY_NAME)}*\n` +
         `━━━━━━━━━━━━━━━━\n\n` +
         `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
-      { parse_mode: "Markdown" }
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
+        ]),
+      }
     );
   });
 
