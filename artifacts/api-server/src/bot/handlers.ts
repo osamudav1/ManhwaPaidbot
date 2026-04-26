@@ -957,8 +957,9 @@ export function registerHandlers(bot: Telegraf) {
         `<blockquote expandable>` +
         `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
-        `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Admin ကို ဆက်သွယ်ပါ 👇\n` +
-        `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
+        `📱 Wave Pay နံပါတ်:09793251923 \n` +
+        `👤 အမည်: Than Htike Aung\n` +
+        `📸 ဒီနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
         `</blockquote>`,
       {
         parse_mode: "HTML",
@@ -1001,7 +1002,7 @@ export function registerHandlers(bot: Telegraf) {
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
         `📱 KPay နံပါတ်: <code>${escHtml(KPAY_PHONE)}</code>\n` +
         `👤 အမည်: <b>${escHtml(KPAY_NAME)}</b>\n` +
-        `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
+        `📸 ဒီနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
         `</blockquote>`,
       {
         parse_mode: "HTML",
