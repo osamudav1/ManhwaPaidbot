@@ -18,6 +18,12 @@ export interface UserState {
   purchaseId?: number;
   // Main channel setup
   mainChannelLink?: string;
+  // Broadcast flow
+  broadcastText?: string;
+  broadcastEntities?: any[];
+  broadcastPhotoFileId?: string;
+  broadcastButtons?: { label: string; url: string }[];
+  broadcastPendingButtonLabel?: string;
 }
 
 const userStates = new Map<number, UserState>();

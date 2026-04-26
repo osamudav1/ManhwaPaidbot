@@ -46,8 +46,8 @@ export function getStartKeyboard(
   ]);
 
   buttons.push([
-    primaryCallback("📚 ဇာတ်ကားများ", "show_manhwa_list"),
-    primaryCallback("⭐ အကြောင်း", "about_bot"),
+    primaryCallback("📚 Manhwa[P]", "show_manhwa_list"),
+    primaryCallback("⭐ Information", "about_bot"),
   ]);
 
   if (botUsername) {
@@ -125,7 +125,7 @@ export function getOwnerConfirmKeyboard(purchaseId: number) {
 
 export function getBackToListKeyboard() {
   return Markup.inlineKeyboard([
-    [primaryCallback("📚 ဇာတ်ကားစာရင်းသို့", "back_to_list")],
+    [primaryCallback("📚 Manhwaစာရင်းသို့", "back_to_list")],
     [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
   ]);
 }
@@ -139,6 +139,7 @@ export function getAdminPanelKeyboard() {
     [primaryCallback("🎨 Welcome Settings", "admin_welcome")],
     [primaryCallback("📢 Main Channel", "admin_mainchannel")],
     [primaryCallback("📊 Purchase Records", "admin_purchases")],
+    [successCallback("📣 Broadcast", "admin_broadcast")],
     [
       successCallback("💾 Backup", "admin_backup"),
       primaryCallback("♻️ Restore", "admin_restore"),
@@ -172,7 +173,7 @@ export function getAdminManhwaListKeyboard(channels: Channel[]) {
 
 export function getAdminEditManhwaKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
-    [primaryCallback("✏️ ဇာတ်ကားအမည် ပြောင်းရန်", `edit_title_${channelDbId}`)],
+    [primaryCallback("✏️ Manhwaအမည် ပြောင်းရန်", `edit_title_${channelDbId}`)],
     [primaryCallback("💰 ဈေးနှုန်း ပြောင်းရန်", `edit_price_${channelDbId}`)],
     [primaryCallback("🖼️ Cover Photo ပြောင်းရန်", `edit_cover_${channelDbId}`)],
     [primaryCallback("📸 Review Photo ပြောင်းရန်", `edit_review_${channelDbId}`)],

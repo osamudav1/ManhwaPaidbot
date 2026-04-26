@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS bot_settings (
 );
 
 ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS welcome_caption_entities TEXT;
+
+CREATE TABLE IF NOT EXISTS bot_users (
+  telegram_id TEXT PRIMARY KEY,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_blocked BOOLEAN NOT NULL DEFAULT false
+);
 `;
 
 export async function ensureBotSchema(): Promise<void> {

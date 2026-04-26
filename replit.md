@@ -32,6 +32,8 @@ pnpm workspace monorepo using TypeScript. Contains a Telegram Manhwa Bot (Burmes
 - **🎨 Welcome Settings** — Set welcome photo, caption, preview
 - **📢 Main Channel** — Set/remove main channel link & display name
 - **📊 Purchase Records** — Recent 10 purchases with status
+- **📣 Broadcast** — Send a message (text or photo+caption) to every tracked user. Preserves owner's HTML/blockquote/bold formatting via `entities` passthrough. Supports optional colored URL buttons (e.g. TG channel link). Anti-spam: sends in batches of 5 with a 1.5s pause between batches; auto-marks blocked/deleted users so they're skipped next time.
+- **💾 Backup / ♻️ Restore** — JSON backup includes channels, settings, purchases, **and tracked user IDs**. Restore wipes & repopulates all four tables atomically.
 - Forward any channel message to bot during add-manhwa = auto-detect channel ID & name
 - Cancel button at every prompt; Skip button on optional fields
 
@@ -39,7 +41,8 @@ pnpm workspace monorepo using TypeScript. Contains a Telegram Manhwa Bot (Burmes
 
 - `channels` — Manhwa channels (id, channel_id, channel_name, manhwa_title, price, cover_photo_url, review_photo_url, description)
 - `purchases` — Purchase records (user info, channel, payment method, screenshot file_id, status, invite_link)
-- `bot_settings` — Key-value (welcome_photo_url, welcome_caption, main_channel_link, main_channel_name)
+- `bot_settings` — Key-value (welcome_photo_url, welcome_caption, welcome_caption_entities, main_channel_link, main_channel_name)
+- `bot_users` — Tracked Telegram users for broadcast (telegram_id, username, first_name, last_name, joined_at, last_seen_at, is_blocked) — populated on every `/start`
 
 ## Bot Setup Requirements
 

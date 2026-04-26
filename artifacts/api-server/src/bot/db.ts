@@ -206,6 +206,64 @@ export async function deleteBotSetting(key: string): Promise<void> {
   await query("DELETE FROM bot_settings WHERE key = $1", [key]);
 }
 
+// ===== Bot Users (broadcast list) =====
+
+export interface BotUser {
+  telegram_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  joined_at: Date;
+  last_seen_at: Date;
+  is_blocked: boolean;
+}
+
+export async function upsertBotUser(data: {
+  telegram_id: string;
+  username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO bot_users (telegram_id, username, first_name, last_name)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (telegram_id) DO UPDATE SET
+       username = EXCLUDED.username,
+       first_name = EXCLUDED.first_name,
+       last_name = EXCLUDED.last_name,
+       last_seen_at = NOW(),
+       is_blocked = false`,
+    [
+      data.telegram_id,
+      data.username ?? null,
+      data.first_name ?? null,
+      data.last_name ?? null,
+    ]
+  );
+}
+
+export async function markUserBlocked(telegramId: string): Promise<void> {
+  await query(
+    "UPDATE bot_users SET is_blocked = true WHERE telegram_id = $1",
+    [telegramId]
+  );
+}
+
+export async function getActiveUserIds(): Promise<string[]> {
+  const res = await query(
+    "SELECT telegram_id FROM bot_users WHERE is_blocked = false ORDER BY joined_at ASC"
+  );
+  return (res.rows as { telegram_id: string }[]).map((r) => r.telegram_id);
+}
+
+export async function getUserCount(): Promise<{ total: number; active: number }> {
+  const res = await query(
+    "SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_blocked = false)::int AS active FROM bot_users"
+  );
+  const row = res.rows[0] as { total: number; active: number };
+  return { total: row?.total ?? 0, active: row?.active ?? 0 };
+}
+
 // ===== Backup / Restore =====
 
 export interface BackupData {
@@ -214,18 +272,21 @@ export interface BackupData {
   channels: Channel[];
   bot_settings: { key: string; value: string; updated_at?: Date }[];
   purchases: Purchase[];
+  users?: BotUser[];
 }
 
 export async function exportAllData(): Promise<BackupData> {
   const channelsRes = await query("SELECT * FROM channels ORDER BY id ASC");
   const settingsRes = await query("SELECT key, value, updated_at FROM bot_settings");
   const purchasesRes = await query("SELECT * FROM purchases ORDER BY id ASC");
+  const usersRes = await query("SELECT * FROM bot_users ORDER BY joined_at ASC");
   return {
-    version: 1,
+    version: 2,
     exported_at: new Date().toISOString(),
     channels: channelsRes.rows as unknown as Channel[],
     bot_settings: settingsRes.rows as unknown as BackupData["bot_settings"],
     purchases: purchasesRes.rows as unknown as Purchase[],
+    users: usersRes.rows as unknown as BotUser[],
   };
 }
 
@@ -233,6 +294,7 @@ export async function importAllData(data: BackupData): Promise<{
   channels: number;
   bot_settings: number;
   purchases: number;
+  users: number;
 }> {
   if (!data || typeof data !== "object" || !Array.isArray(data.channels)) {
     throw new Error("Invalid backup data");
@@ -245,6 +307,7 @@ export async function importAllData(data: BackupData): Promise<{
     await client.query("DELETE FROM bot_settings");
     await client.query("DELETE FROM purchases");
     await client.query("DELETE FROM channels");
+    await client.query("DELETE FROM bot_users");
 
     let chCount = 0;
     for (const c of data.channels) {
@@ -308,8 +371,27 @@ export async function importAllData(data: BackupData): Promise<{
       );
     }
 
+    let uCount = 0;
+    for (const u of data.users || []) {
+      await client.query(
+        `INSERT INTO bot_users (telegram_id, username, first_name, last_name, joined_at, last_seen_at, is_blocked)
+         VALUES ($1, $2, $3, $4, COALESCE($5, NOW()), COALESCE($6, NOW()), COALESCE($7, false))
+         ON CONFLICT (telegram_id) DO NOTHING`,
+        [
+          String(u.telegram_id),
+          u.username ?? null,
+          u.first_name ?? null,
+          (u as any).last_name ?? null,
+          u.joined_at ?? null,
+          (u as any).last_seen_at ?? null,
+          (u as any).is_blocked ?? false,
+        ]
+      );
+      uCount++;
+    }
+
     await client.query("COMMIT");
-    return { channels: chCount, bot_settings: stCount, purchases: pCount };
+    return { channels: chCount, bot_settings: stCount, purchases: pCount, users: uCount };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

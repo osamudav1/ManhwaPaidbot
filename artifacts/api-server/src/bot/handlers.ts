@@ -19,6 +19,10 @@ import {
   getPurchaseByInviteLink,
   exportAllData,
   importAllData,
+  upsertBotUser,
+  getActiveUserIds,
+  getUserCount,
+  markUserBlocked,
 } from "./db.js";
 import {
   getStartKeyboard,
@@ -160,6 +164,18 @@ async function showStartScreen(ctx: any) {
   const userId = ctx.from.id;
   clearUserState(userId);
 
+  // Track user for broadcast list
+  try {
+    await upsertBotUser({
+      telegram_id: String(userId),
+      username: ctx.from.username || null,
+      first_name: ctx.from.first_name || null,
+      last_name: ctx.from.last_name || null,
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to upsert bot user");
+  }
+
   const welcomeCaption = await getBotSetting("welcome_caption");
   const welcomeEntitiesJson = await getBotSetting("welcome_caption_entities");
   const welcomePhoto = await getBotSetting("welcome_photo_url");
@@ -195,13 +211,13 @@ async function showStartScreen(ctx: any) {
   if (channels.length > 0) {
     await safeReply(
       ctx,
-      "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+      "🌷 <blockquote>ကြိုက်နှစ်သက်သော Manhwaကို ရွေးပါ</blockquote>",
       { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
     );
   } else {
     await safeReply(
       ctx,
-      "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 🌸"
+      "Manhwaများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 🌸"
     );
   }
 }
@@ -263,7 +279,7 @@ export function registerHandlers(bot: Telegraf) {
         {
           caption:
             `💾 *Backup ပြီးပါပြီ*\n\n` +
-            `📚 ဇာတ်ကား: *${data.channels.length}*\n` +
+            `📚 Manhwa: *${data.channels.length}*\n` +
             `⚙️ Settings: *${data.bot_settings.length}*\n` +
             `🛒 Purchases: *${data.purchases.length}*\n\n` +
             `ပြန်လည်ဆင်းသွင်းရန်: \`/restore\` ကို နှိပ်ပြီး ဤ JSON ဖိုင်ကို ပြန်ပို့ပါ`,
@@ -310,9 +326,10 @@ export function registerHandlers(bot: Telegraf) {
         {
           caption:
             `💾 *Backup ပြီးပါပြီ*\n\n` +
-            `📚 ဇာတ်ကား: *${data.channels.length}*\n` +
+            `📚 Manhwa: *${data.channels.length}*\n` +
             `⚙️ Settings: *${data.bot_settings.length}*\n` +
-            `🛒 Purchases: *${data.purchases.length}*`,
+            `🛒 Purchases: *${data.purchases.length}*\n` +
+            `👥 Users: *${data.users?.length ?? 0}*`,
           parse_mode: "Markdown",
         }
       );
@@ -346,6 +363,280 @@ export function registerHandlers(bot: Telegraf) {
     await editOrReply(ctx, "❌ Restore ပယ်ဖျက်ပြီး။");
   });
 
+  // ===== Broadcast =====
+  bot.action("admin_broadcast", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    const counts = await getUserCount();
+    setUserState(ctx.from.id, {
+      action: "broadcast_wait_content",
+      broadcastButtons: [],
+    });
+    await editOrReply(
+      ctx,
+      `📣 <b>Broadcast Mode</b>\n\n` +
+        `👥 လက်ရှိ user: <b>${counts.active}</b> ယောက် (စုစုပေါင်း ${counts.total})\n\n` +
+        `ပို့လိုသော <b>စာ</b> သို့မဟုတ် <b>ပုံ + caption</b> ကို ပို့ပါ။\n` +
+        `<blockquote>HTML format / blockquote / bold / italic အားလုံး အသုံးပြုနိုင်ပါတယ်။\nTelegram အတွင်းပဲ format လုပ်ပြီး ပို့လိုက်ပါ — bot က entities တွေ ထိန်းသိမ်းပေးပါမယ်။</blockquote>`,
+      {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [dangerCallback("❌ ပယ်ဖျက်ရန်", "broadcast_cancel")],
+        ]),
+      }
+    );
+  });
+
+  bot.action("broadcast_cancel", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    clearUserState(ctx.from.id);
+    await editOrReply(ctx, "❌ Broadcast ပယ်ဖျက်ပြီး။");
+  });
+
+  bot.action("broadcast_add_button", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    const state = getUserState(ctx.from.id);
+    if (!state.broadcastText && !state.broadcastPhotoFileId) return;
+    setUserState(ctx.from.id, { action: "broadcast_wait_button_label" });
+    await safeReply(
+      ctx,
+      `🔘 <b>Button Label</b>\n\nButton မှာ ပြသမည့် စာသား ရိုက်ပါ။\n<blockquote>ဥပမာ: 📢 Channel သို့ ဝင်ရန်</blockquote>`,
+      {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [dangerCallback("❌ ပယ်ဖျက်ရန်", "broadcast_cancel")],
+        ]),
+      }
+    );
+  });
+
+  bot.action("broadcast_send", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    const ownerId = ctx.from.id;
+    const state = getUserState(ownerId);
+    if (!state.broadcastText && !state.broadcastPhotoFileId) {
+      await safeReply(ctx, "❌ ပို့စရာ message မရှိပါ။");
+      return;
+    }
+
+    const userIds = await getActiveUserIds();
+    const total = userIds.length;
+    if (total === 0) {
+      clearUserState(ownerId);
+      await safeReply(ctx, "❌ User စာရင်းထဲမှာ မည်သူမှ မရှိသေးပါ။");
+      return;
+    }
+
+    const buttons = state.broadcastButtons || [];
+    const inlineKeyboard = buttons.length
+      ? buttons.map((b) => [{ text: b.label, url: b.url, style: "success" } as any])
+      : undefined;
+    const replyMarkup = inlineKeyboard
+      ? { inline_keyboard: inlineKeyboard }
+      : undefined;
+
+    const text = state.broadcastText || "";
+    const entities = state.broadcastEntities;
+    const photoId = state.broadcastPhotoFileId;
+
+    await safeReply(
+      ctx,
+      `📤 Broadcast စတင်ပို့နေပါသည်...\n👥 ${total} ယောက်ဆီ ပို့မည်`,
+      { parse_mode: "HTML" }
+    );
+
+    let sent = 0;
+    let failed = 0;
+    const BATCH_SIZE = 5;
+    const PAUSE_MS = 1500;
+
+    for (let i = 0; i < userIds.length; i += BATCH_SIZE) {
+      const batch = userIds.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (uid) => {
+          try {
+            if (photoId) {
+              await ctx.telegram.sendPhoto(uid, photoId, {
+                caption: text || undefined,
+                caption_entities: entities,
+                reply_markup: replyMarkup,
+              } as any);
+            } else {
+              await ctx.telegram.sendMessage(uid, text, {
+                entities,
+                reply_markup: replyMarkup,
+                link_preview_options: { is_disabled: true },
+              } as any);
+            }
+            sent++;
+          } catch (err: any) {
+            failed++;
+            const desc = String(err?.description || err?.message || "");
+            if (
+              desc.includes("blocked") ||
+              desc.includes("user is deactivated") ||
+              desc.includes("chat not found")
+            ) {
+              try {
+                await markUserBlocked(uid);
+              } catch {}
+            }
+            logger.warn({ err: desc, uid }, "Broadcast send failed");
+          }
+        })
+      );
+      if (i + BATCH_SIZE < userIds.length) {
+        await new Promise((r) => setTimeout(r, PAUSE_MS));
+      }
+    }
+
+    clearUserState(ownerId);
+    await safeReply(
+      ctx,
+      `✅ <b>Broadcast ပြီးပါပြီ!</b>\n\n` +
+        `📤 အောင်မြင်: <b>${sent}</b>\n` +
+        `❌ မအောင်မြင်: <b>${failed}</b>\n` +
+        `👥 စုစုပေါင်း: <b>${total}</b>`,
+      { parse_mode: "HTML" }
+    );
+  });
+
+  // Handle owner sending broadcast content (text or photo)
+  async function handleBroadcastContent(ctx: any) {
+    const userId = ctx.from.id;
+    const state = getUserState(userId);
+    const msg = ctx.message;
+    if (!msg) return false;
+
+    if (state.action === "broadcast_wait_content") {
+      const photo = msg.photo?.[msg.photo.length - 1];
+      if (photo) {
+        setUserState(userId, {
+          action: "broadcast_preview",
+          broadcastPhotoFileId: photo.file_id,
+          broadcastText: msg.caption || "",
+          broadcastEntities: msg.caption_entities || undefined,
+          broadcastButtons: state.broadcastButtons || [],
+        });
+      } else if (typeof msg.text === "string") {
+        setUserState(userId, {
+          action: "broadcast_preview",
+          broadcastText: msg.text,
+          broadcastEntities: msg.entities || undefined,
+          broadcastButtons: state.broadcastButtons || [],
+        });
+      } else {
+        await safeReply(ctx, "❌ စာ သို့မဟုတ် ပုံသာ ပို့ပေးပါ။");
+        return true;
+      }
+      await showBroadcastPreview(ctx);
+      return true;
+    }
+
+    if (state.action === "broadcast_wait_button_label") {
+      const label = msg.text?.trim();
+      if (!label) {
+        await safeReply(ctx, "❌ Button label ရိုက်ပေးပါ။");
+        return true;
+      }
+      setUserState(userId, {
+        action: "broadcast_wait_button_url",
+        broadcastPendingButtonLabel: label,
+      });
+      await safeReply(
+        ctx,
+        `🔗 <b>Button URL</b>\n\nButton အတွက် link (URL) ကို ပို့ပေးပါ။\n<blockquote>ဥပမာ: https://t.me/yourchannel</blockquote>`,
+        {
+          parse_mode: "HTML",
+          ...Markup.inlineKeyboard([
+            [dangerCallback("❌ ပယ်ဖျက်ရန်", "broadcast_cancel")],
+          ]),
+        }
+      );
+      return true;
+    }
+
+    if (state.action === "broadcast_wait_button_url") {
+      const url = msg.text?.trim();
+      if (!url || !/^https?:\/\/|^tg:\/\//i.test(url)) {
+        await safeReply(
+          ctx,
+          "❌ မှန်ကန်တဲ့ URL ပို့ပေးပါ (https://... သို့မဟုတ် tg://...)"
+        );
+        return true;
+      }
+      const label = state.broadcastPendingButtonLabel || "Open";
+      const buttons = [...(state.broadcastButtons || []), { label, url }];
+      setUserState(userId, {
+        action: "broadcast_preview",
+        broadcastButtons: buttons,
+        broadcastPendingButtonLabel: undefined,
+      });
+      await showBroadcastPreview(ctx);
+      return true;
+    }
+
+    return false;
+  }
+
+  async function showBroadcastPreview(ctx: any) {
+    const userId = ctx.from.id;
+    const state = getUserState(userId);
+    const text = state.broadcastText || "";
+    const entities = state.broadcastEntities;
+    const photoId = state.broadcastPhotoFileId;
+    const buttons = state.broadcastButtons || [];
+
+    const previewMarkup = buttons.length
+      ? {
+          inline_keyboard: buttons.map((b) => [
+            { text: b.label, url: b.url, style: "success" } as any,
+          ]),
+        }
+      : undefined;
+
+    await safeReply(ctx, "👁 <b>Preview</b>", { parse_mode: "HTML" });
+
+    try {
+      if (photoId) {
+        await ctx.telegram.sendPhoto(ctx.chat.id, photoId, {
+          caption: text || undefined,
+          caption_entities: entities,
+          reply_markup: previewMarkup,
+        } as any);
+      } else {
+        await ctx.telegram.sendMessage(ctx.chat.id, text, {
+          entities,
+          reply_markup: previewMarkup,
+          link_preview_options: { is_disabled: true },
+        } as any);
+      }
+    } catch (err) {
+      logger.error({ err }, "Broadcast preview failed");
+      await safeReply(ctx, "⚠️ Preview ပြ၍ မရပါ — format ပြန်စစ်ပေးပါ။");
+    }
+
+    const counts = await getUserCount();
+    await safeReply(
+      ctx,
+      `👥 ပို့ရမည့် user: <b>${counts.active}</b> ယောက်\n🔘 Button: <b>${buttons.length}</b>`,
+      {
+        parse_mode: "HTML",
+        ...Markup.inlineKeyboard([
+          [successCallback("📤 Broadcast ပို့ရန်", "broadcast_send")],
+          [primaryCallback("➕ Button ထည့်ရန်", "broadcast_add_button")],
+          [dangerCallback("❌ ပယ်ဖျက်ရန်", "broadcast_cancel")],
+        ]),
+      }
+    );
+  }
+
+  // Expose to message handlers below
+  (bot as any).__handleBroadcastContent = handleBroadcastContent;
+
   // ===== Document handler for restore =====
   bot.on("document", async (ctx) => {
     const userId = ctx.from.id;
@@ -367,9 +658,10 @@ export function registerHandlers(bot: Telegraf) {
       await safeReply(
         ctx,
         `✅ *Restore အောင်မြင်ပါပြီ!*\n\n` +
-          `📚 ဇာတ်ကား: *${result.channels}*\n` +
+          `📚 Manhwa: *${result.channels}*\n` +
           `⚙️ Settings: *${result.bot_settings}*\n` +
-          `🛒 Purchases: *${result.purchases}*`,
+          `🛒 Purchases: *${result.purchases}*\n` +
+          `👥 Users: *${result.users}*`,
         { parse_mode: "Markdown" }
       );
     } catch (err) {
@@ -386,7 +678,7 @@ export function registerHandlers(bot: Telegraf) {
     await editOrReply(
       ctx,
       "📖 *အသုံးပြုနည်း*\n\n" +
-        "1️⃣ ဇာတ်ကားစာရင်းမှ ကြိုက်သောကားကို ရွေးပါ\n" +
+        "1️⃣ Manhwaစာရင်းမှ ကြိုက်သောကားကို ရွေးပါ\n" +
         "2️⃣ Review ကြည့်ပြီး ဝယ်ယူရန် နှိပ်ပါ\n" +
         "3️⃣ ငွေပေးချေမှု နည်းလမ်း ရွေးပါ (Wave / KPay)\n" +
         "4️⃣ ပြေစာ Screenshot ပို့ပါ\n" +
@@ -397,7 +689,7 @@ export function registerHandlers(bot: Telegraf) {
         ...Markup.inlineKeyboard([
           [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [
-            primaryCallback("📚 ဇာတ်ကားစာရင်း", "back_to_list"),
+            primaryCallback("📚 Manhwaစာရင်း", "back_to_list"),
             primaryCallback("🏠 ပင်မ", "back_to_start"),
           ],
         ]),
@@ -419,12 +711,12 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     const channels = await getAllActiveChannels();
     if (channels.length === 0) {
-      await editOrReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊");
+      await editOrReply(ctx, "Manhwaများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊");
       return;
     }
     await editOrReply(
       ctx,
-      "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+      "🌷 <blockquote>ကြိုက်နှစ်သက်သော Manhwaကို ရွေးပါ</blockquote>",
       { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
     );
   });
@@ -481,18 +773,18 @@ export function registerHandlers(bot: Telegraf) {
     if (channels.length > 0) {
       try {
         await ctx.editMessageText(
-          "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+          "🌷 <blockquote>ကြိုက်နှစ်သက်သော Manhwaကို ရွေးပါ</blockquote>",
           { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
         );
       } catch {
         await safeReply(
           ctx,
-          "🌷 <blockquote>ကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးပါ</blockquote>",
+          "🌷 <blockquote>ကြိုက်နှစ်သက်သော Manhwaကို ရွေးပါ</blockquote>",
           { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
         );
       }
     } else {
-      await safeReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။");
+      await safeReply(ctx, "Manhwaများ မရှိသေးပါ။");
     }
   });
 
@@ -502,7 +794,7 @@ export function registerHandlers(bot: Telegraf) {
     const channelDbId = parseInt(ctx.match[1], 10);
     const channel = await getChannelById(channelDbId);
     if (!channel) {
-      await safeReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
+      await safeReply(ctx, "Manhwa မတွေ့ပါ။");
       return;
     }
 
@@ -542,7 +834,7 @@ export function registerHandlers(bot: Telegraf) {
     const channelDbId = parseInt(ctx.match[1], 10);
     const channel = await getChannelById(channelDbId);
     if (!channel) {
-      await editOrReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
+      await editOrReply(ctx, "Manhwa မတွေ့ပါ။");
       return;
     }
     await editOrReply(ctx, `💳 *${escMd(channel.manhwa_title)}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
@@ -578,7 +870,7 @@ export function registerHandlers(bot: Telegraf) {
       ctx,
       `💳 <b>Wave Pay ဖြင့် ငွေပေးချေရန်</b>\n` +
         `<blockquote>` +
-        `📖 ဇာတ်ကား: <b>${escHtml(channel.manhwa_title)}</b>\n` +
+        `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
         `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n` +
         `📸 ဒီစာနေရာမှာ ငွေလဲပီးပါက ပြေစာပို့ပေးပါ` +
@@ -620,7 +912,7 @@ export function registerHandlers(bot: Telegraf) {
       ctx,
       `💎 <b>KPay ဖြင့် ငွေပေးချေရန်</b>\n` +
         `<blockquote>` +
-        `📖 ဇာတ်ကား: <b>${escHtml(channel.manhwa_title)}</b>\n` +
+        `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
         `📱 KPay နံပါတ်: <code>${escHtml(KPAY_PHONE)}</code>\n` +
         `👤 အမည်: <b>${escHtml(KPAY_NAME)}</b>\n` +
@@ -671,7 +963,7 @@ export function registerHandlers(bot: Telegraf) {
 
       const userMessage =
         `✅ *မင်္ဂလာပါ လူကြီးမင်း!*\n\n` +
-        `လူကြီးမင်း Paid ဝင်လိုက်သော ဇာတ်ကားရဲ့\n` +
+        `လူကြီးမင်း Paid ဝင်လိုက်သော Manhwaရဲ့\n` +
         `🔗 *1 Invite Link*\n` +
         `(တစ်ဦးတစ်ယောက်သာ ဝင်လို့ရသော Link ဖြစ်ပါသဖြင့် မည်သူ့မှ မျှဝေပါနှင့်)\n\n` +
         `Link နှိပ်ပြီး တန်းဝင်ပေးပါ 👇\n\n` +
@@ -842,7 +1134,7 @@ export function registerHandlers(bot: Telegraf) {
 
     try {
       await ctx.editMessageText(
-        `📋 *Manhwa စာရင်း*\n\nစီမံခန့်ခွဲမည့် ဇာတ်ကားကို ရွေးပါ:`,
+        `📋 *Manhwa စာရင်း*\n\nစီမံခန့်ခွဲမည့် Manhwaကို ရွေးပါ:`,
         { parse_mode: "Markdown", ...getAdminManhwaListKeyboard(channels) }
       );
     } catch {
@@ -887,7 +1179,7 @@ export function registerHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     const channelDbId = parseInt(ctx.match[1], 10);
     setUserState(ctx.from.id, { action: "edit_title", editChannelId: String(channelDbId) });
-    await safeReply(ctx, "ဇာတ်ကားအမည် အသစ် ရိုက်ပါ:", getCancelKeyboard());
+    await safeReply(ctx, "Manhwaအမည် အသစ် ရိုက်ပါ:", getCancelKeyboard());
   });
 
   bot.action(/^edit_price_(\d+)$/, async (ctx) => {
@@ -1134,7 +1426,7 @@ export function registerHandlers(bot: Telegraf) {
     updateUserState(ctx.from.id, { action: "add_step_review" });
     await safeReply(
       ctx,
-      `📸 *Step 4/5: Review Photo*\n\nReview Photo ကို ပို့ပါ\n(User က ဇာတ်ကား မဝယ်ခင် ပြသမည်)`,
+      `📸 *Step 4/5: Review Photo*\n\nReview Photo ကို ပို့ပါ\n(User က Manhwa မဝယ်ခင် ပြသမည်)`,
       { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_review") }
     );
   });
@@ -1175,6 +1467,16 @@ export function registerHandlers(bot: Telegraf) {
   bot.on("photo", async (ctx) => {
     const userId = ctx.from.id;
     const state = getUserState(userId);
+
+    // Broadcast intercept (owner only)
+    if (
+      isOwner(userId) &&
+      state.action === "broadcast_wait_content"
+    ) {
+      const handler = (bot as any).__handleBroadcastContent;
+      if (handler && (await handler(ctx))) return;
+    }
+
     const photo = ctx.message.photo;
     const fileId = photo[photo.length - 1].file_id;
 
@@ -1194,7 +1496,7 @@ export function registerHandlers(bot: Telegraf) {
           `✅ Channel ချိတ်ဆက်ပြီး!\n` +
             `📛 Channel: ${escMd(channelName) || channelId}\n` +
             `🆔 ID: \`${channelId}\`\n\n` +
-            `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
+            `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa အမည် ရိုက်ပါ:`,
           { parse_mode: "Markdown", ...getCancelKeyboard() }
         );
         return;
@@ -1284,7 +1586,7 @@ export function registerHandlers(bot: Telegraf) {
 
       const ownerMsg =
         `🛍️ *Purchase Request*\n\n` +
-        `📖 ဇာတ်ကား: *${escMd(manhwaTitle)}*\n` +
+        `📖 Manhwa: *${escMd(manhwaTitle)}*\n` +
         `💳 ငွေပေးချေမှု: *${state.paymentMethod === "kpay" ? "KPay" : "Wave Pay"}*\n` +
         `💰 ဈေးနှုန်း: *${channel?.price?.toLocaleString() || "N/A"} ကျပ်*\n` +
         `━━━━━━━━━━━━━━━━\n` +
@@ -1322,6 +1624,16 @@ export function registerHandlers(bot: Telegraf) {
     if (text.startsWith("/")) return;
 
     if (!isOwner(userId)) return;
+
+    // ===== Broadcast intercept =====
+    if (
+      state.action === "broadcast_wait_content" ||
+      state.action === "broadcast_wait_button_label" ||
+      state.action === "broadcast_wait_button_url"
+    ) {
+      const handler = (bot as any).__handleBroadcastContent;
+      if (handler && (await handler(ctx))) return;
+    }
 
     // ===== Add Manhwa Flow =====
     if (state.action === "add_step_channel") {
@@ -1369,7 +1681,7 @@ export function registerHandlers(bot: Telegraf) {
         ctx,
         `✅ Channel ချိတ်ဆက်ပြီး!\n` +
           `📛 Channel: ${escMd(channelName) || channelId}\n\n` +
-          `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:\n(ဥပမာ: Solo Leveling)`,
+          `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa အမည် ရိုက်ပါ:\n(ဥပမာ: Solo Leveling)`,
         { parse_mode: "Markdown", ...getCancelKeyboard() }
       );
       return;
@@ -1379,7 +1691,7 @@ export function registerHandlers(bot: Telegraf) {
       updateUserState(userId, { action: "add_step_price", draftManhwaTitle: text.trim() });
       await safeReply(
         ctx,
-        `✅ ဇာတ်ကားအမည်: *${escMd(text.trim())}*\n\n💰 *Step 3/5: ဈေးနှုန်း*\n\nဈေးနှုန်း (ကျပ်) ရိုက်ပါ:\n(ဥပမာ: 3000)`,
+        `✅ Manhwaအမည်: *${escMd(text.trim())}*\n\n💰 *Step 3/5: ဈေးနှုန်း*\n\nဈေးနှုန်း (ကျပ်) ရိုက်ပါ:\n(ဥပမာ: 3000)`,
         { parse_mode: "Markdown", ...getCancelKeyboard() }
       );
       return;
@@ -1411,7 +1723,7 @@ export function registerHandlers(bot: Telegraf) {
       const channelDbId = parseInt(state.editChannelId, 10);
       await updateChannel(channelDbId, { manhwa_title: text.trim() });
       clearUserState(userId);
-      await safeReply(ctx, "✅ ဇာတ်ကားအမည် ပြောင်းပြီး!", Markup.inlineKeyboard([
+      await safeReply(ctx, "✅ Manhwaအမည် ပြောင်းပြီး!", Markup.inlineKeyboard([
         [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
@@ -1526,7 +1838,7 @@ export function registerHandlers(bot: Telegraf) {
       `✅ Channel ချိတ်ဆက်ပြီး!\n` +
         `📛 Channel: ${escMd(channelName) || channelId}\n` +
         `🆔 ID: \`${channelId}\`\n\n` +
-        `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
+        `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa အမည် ရိုက်ပါ:`,
       { parse_mode: "Markdown", ...getCancelKeyboard() }
     );
   });
