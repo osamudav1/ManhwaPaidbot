@@ -17,6 +17,8 @@ import {
   updatePurchaseScreenshot,
   getRecentPurchases,
   getPurchaseByInviteLink,
+  exportAllData,
+  importAllData,
 } from "./db.js";
 import {
   getStartKeyboard,
@@ -244,6 +246,138 @@ export function registerHandlers(bot: Telegraf) {
   bot.command("admin", async (ctx) => {
     if (!isOwner(ctx.from.id)) return;
     await showAdminPanel(ctx);
+  });
+
+  // ===== /backup (owner only) — exports all data as a JSON file =====
+  bot.command("backup", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    try {
+      const data = await exportAllData();
+      const json = JSON.stringify(data, null, 2);
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      await ctx.replyWithDocument(
+        {
+          source: Buffer.from(json, "utf-8"),
+          filename: `manhwa-backup-${ts}.json`,
+        },
+        {
+          caption:
+            `💾 *Backup ပြီးပါပြီ*\n\n` +
+            `📚 ဇာတ်ကား: *${data.channels.length}*\n` +
+            `⚙️ Settings: *${data.bot_settings.length}*\n` +
+            `🛒 Purchases: *${data.purchases.length}*\n\n` +
+            `ပြန်လည်ဆင်းသွင်းရန်: \`/restore\` ကို နှိပ်ပြီး ဤ JSON ဖိုင်ကို ပြန်ပို့ပါ`,
+          parse_mode: "Markdown",
+        }
+      );
+    } catch (err) {
+      logger.error({ err }, "Backup failed");
+      await safeReply(ctx, "❌ Backup ထုတ်၍ မရပါ။ နောက်မှ ထပ်ကြိုးစားပါ။");
+    }
+  });
+
+  // ===== /restore (owner only) — set state to wait for backup file =====
+  bot.command("restore", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    setUserState(ctx.from.id, { action: "waiting_restore_file" });
+    await safeReply(
+      ctx,
+      "♻️ *Restore Mode*\n\n" +
+        "Backup JSON ဖိုင်ကို Document အဖြစ် ပြန်ပို့ပါ။\n\n" +
+        "⚠️ *သတိ:* ယခု database ထဲက data အားလုံးကို ဖယ်ပြီး backup ထဲက data နဲ့ အစားထိုးပါမည်။",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [dangerCallback("❌ ပယ်ဖျက်ရန်", "cancel_restore")],
+        ]),
+      }
+    );
+  });
+
+  // Admin panel button shortcuts → run the same flows
+  bot.action("admin_backup", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    try {
+      const data = await exportAllData();
+      const json = JSON.stringify(data, null, 2);
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      await ctx.replyWithDocument(
+        {
+          source: Buffer.from(json, "utf-8"),
+          filename: `manhwa-backup-${ts}.json`,
+        },
+        {
+          caption:
+            `💾 *Backup ပြီးပါပြီ*\n\n` +
+            `📚 ဇာတ်ကား: *${data.channels.length}*\n` +
+            `⚙️ Settings: *${data.bot_settings.length}*\n` +
+            `🛒 Purchases: *${data.purchases.length}*`,
+          parse_mode: "Markdown",
+        }
+      );
+    } catch (err) {
+      logger.error({ err }, "Backup failed (admin button)");
+      await safeReply(ctx, "❌ Backup ထုတ်၍ မရပါ။");
+    }
+  });
+
+  bot.action("admin_restore", async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isOwner(ctx.from.id)) return;
+    setUserState(ctx.from.id, { action: "waiting_restore_file" });
+    await editOrReply(
+      ctx,
+      "♻️ *Restore Mode*\n\n" +
+        "Backup JSON ဖိုင်ကို Document အဖြစ် ပြန်ပို့ပါ။\n\n" +
+        "⚠️ *သတိ:* ယခု database ထဲက data အားလုံးကို ဖယ်ပြီး backup ထဲက data နဲ့ အစားထိုးပါမည်။",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [dangerCallback("❌ ပယ်ဖျက်ရန်", "cancel_restore")],
+        ]),
+      }
+    );
+  });
+
+  bot.action("cancel_restore", async (ctx) => {
+    await ctx.answerCbQuery();
+    clearUserState(ctx.from.id);
+    await editOrReply(ctx, "❌ Restore ပယ်ဖျက်ပြီး။");
+  });
+
+  // ===== Document handler for restore =====
+  bot.on("document", async (ctx) => {
+    const userId = ctx.from.id;
+    if (!isOwner(userId)) return;
+    const state = getUserState(userId);
+    if (state.action !== "waiting_restore_file") return;
+
+    const doc = ctx.message.document;
+    if (!doc) return;
+
+    try {
+      const link = await ctx.telegram.getFileLink(doc.file_id);
+      const res = await fetch(link.href);
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const text = await res.text();
+      const data = JSON.parse(text);
+      const result = await importAllData(data);
+      clearUserState(userId);
+      await safeReply(
+        ctx,
+        `✅ *Restore အောင်မြင်ပါပြီ!*\n\n` +
+          `📚 ဇာတ်ကား: *${result.channels}*\n` +
+          `⚙️ Settings: *${result.bot_settings}*\n` +
+          `🛒 Purchases: *${result.purchases}*`,
+        { parse_mode: "Markdown" }
+      );
+    } catch (err) {
+      logger.error({ err }, "Restore failed");
+      clearUserState(userId);
+      const msg = err instanceof Error ? err.message : String(err);
+      await safeReply(ctx, `❌ Restore မအောင်မြင်ပါ: ${msg}`);
+    }
   });
 
   // ===== Help =====

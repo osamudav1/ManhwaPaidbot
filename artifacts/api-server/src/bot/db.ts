@@ -205,3 +205,115 @@ export async function setBotSetting(key: string, value: string): Promise<void> {
 export async function deleteBotSetting(key: string): Promise<void> {
   await query("DELETE FROM bot_settings WHERE key = $1", [key]);
 }
+
+// ===== Backup / Restore =====
+
+export interface BackupData {
+  version: number;
+  exported_at: string;
+  channels: Channel[];
+  bot_settings: { key: string; value: string; updated_at?: Date }[];
+  purchases: Purchase[];
+}
+
+export async function exportAllData(): Promise<BackupData> {
+  const channelsRes = await query("SELECT * FROM channels ORDER BY id ASC");
+  const settingsRes = await query("SELECT key, value, updated_at FROM bot_settings");
+  const purchasesRes = await query("SELECT * FROM purchases ORDER BY id ASC");
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    channels: channelsRes.rows as unknown as Channel[],
+    bot_settings: settingsRes.rows as unknown as BackupData["bot_settings"],
+    purchases: purchasesRes.rows as unknown as Purchase[],
+  };
+}
+
+export async function importAllData(data: BackupData): Promise<{
+  channels: number;
+  bot_settings: number;
+  purchases: number;
+}> {
+  if (!data || typeof data !== "object" || !Array.isArray(data.channels)) {
+    throw new Error("Invalid backup data");
+  }
+  const client = await (
+    pool as unknown as { connect: () => Promise<any> }
+  ).connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM bot_settings");
+    await client.query("DELETE FROM purchases");
+    await client.query("DELETE FROM channels");
+
+    let chCount = 0;
+    for (const c of data.channels) {
+      await client.query(
+        `INSERT INTO channels (id, channel_id, channel_name, channel_username, manhwa_title, price, cover_photo_url, review_photo_url, description, is_active, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11, NOW()))`,
+        [
+          c.id,
+          c.channel_id,
+          c.channel_name,
+          c.channel_username ?? null,
+          c.manhwa_title,
+          c.price,
+          c.cover_photo_url ?? null,
+          c.review_photo_url ?? null,
+          c.description ?? null,
+          c.is_active ?? true,
+          c.created_at ?? null,
+        ]
+      );
+      chCount++;
+    }
+    if (chCount > 0) {
+      await client.query(
+        "SELECT setval('channels_id_seq', (SELECT MAX(id) FROM channels))"
+      );
+    }
+
+    let stCount = 0;
+    for (const s of data.bot_settings || []) {
+      await client.query(
+        `INSERT INTO bot_settings (key, value, updated_at) VALUES ($1, $2, COALESCE($3, NOW()))`,
+        [s.key, s.value, s.updated_at ?? null]
+      );
+      stCount++;
+    }
+
+    let pCount = 0;
+    for (const p of data.purchases || []) {
+      await client.query(
+        `INSERT INTO purchases (id, user_id, username, first_name, channel_id, payment_method, screenshot_file_id, status, invite_link, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, COALESCE($10, NOW()))`,
+        [
+          p.id,
+          p.user_id,
+          p.username ?? null,
+          p.first_name ?? null,
+          p.channel_id,
+          p.payment_method,
+          p.screenshot_file_id ?? null,
+          p.status ?? "pending",
+          p.invite_link ?? null,
+          p.created_at ?? null,
+        ]
+      );
+      pCount++;
+    }
+    if (pCount > 0) {
+      await client.query(
+        "SELECT setval('purchases_id_seq', (SELECT MAX(id) FROM purchases))"
+      );
+    }
+
+    await client.query("COMMIT");
+    return { channels: chCount, bot_settings: stCount, purchases: pCount };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

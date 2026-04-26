@@ -139,6 +139,10 @@ export function getAdminPanelKeyboard() {
     [primaryCallback("🎨 Welcome Settings", "admin_welcome")],
     [primaryCallback("📢 Main Channel", "admin_mainchannel")],
     [primaryCallback("📊 Purchase Records", "admin_purchases")],
+    [
+      successCallback("💾 Backup", "admin_backup"),
+      primaryCallback("♻️ Restore", "admin_restore"),
+    ],
     [dangerCallback("❌ ပိတ်ရန်", "admin_close")],
   ]);
 }
