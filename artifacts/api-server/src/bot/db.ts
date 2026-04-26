@@ -1,9 +1,13 @@
 import { pool } from "@workspace/db";
 
-type QueryResult = { rows: Record<string, unknown>[] };
+type QueryResult = { rows: Record<string, unknown>[]; rowCount?: number };
 
 async function query(sql: string, params?: unknown[]): Promise<QueryResult> {
-  return (pool as unknown as { query: (sql: string, params?: unknown[]) => Promise<QueryResult> }).query(sql, params);
+  return (
+    pool as unknown as {
+      query: (sql: string, params?: unknown[]) => Promise<QueryResult>;
+    }
+  ).query(sql, params);
 }
 
 export interface Channel {
@@ -35,9 +39,14 @@ export interface Purchase {
 
 export async function getAllActiveChannels(): Promise<Channel[]> {
   const res = await query(
-    "SELECT * FROM channels WHERE is_active = true ORDER BY manhwa_title ASC"
+    "SELECT * FROM channels WHERE is_active = true ORDER BY created_at DESC"
   );
   return res.rows as unknown as Channel[];
+}
+
+export async function getChannelById(id: number): Promise<Channel | null> {
+  const res = await query("SELECT * FROM channels WHERE id = $1", [id]);
+  return (res.rows[0] as unknown as Channel) || null;
 }
 
 export async function getChannelByManhwaTitle(title: string): Promise<Channel | null> {
@@ -49,10 +58,7 @@ export async function getChannelByManhwaTitle(title: string): Promise<Channel | 
 }
 
 export async function getChannelByChannelId(channelId: string): Promise<Channel | null> {
-  const res = await query(
-    "SELECT * FROM channels WHERE channel_id = $1",
-    [channelId]
-  );
+  const res = await query("SELECT * FROM channels WHERE channel_id = $1", [channelId]);
   return (res.rows[0] as unknown as Channel) || null;
 }
 
@@ -67,16 +73,17 @@ export async function addChannel(data: {
   description?: string;
 }): Promise<Channel> {
   const res = await query(
-    `INSERT INTO channels (channel_id, channel_name, channel_username, manhwa_title, price, cover_photo_url, review_photo_url, description)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO channels (channel_id, channel_name, channel_username, manhwa_title, price, cover_photo_url, review_photo_url, description, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
      ON CONFLICT (channel_id) DO UPDATE SET
        channel_name = EXCLUDED.channel_name,
        channel_username = EXCLUDED.channel_username,
        manhwa_title = EXCLUDED.manhwa_title,
        price = EXCLUDED.price,
-       cover_photo_url = EXCLUDED.cover_photo_url,
-       review_photo_url = EXCLUDED.review_photo_url,
-       description = EXCLUDED.description
+       cover_photo_url = COALESCE(EXCLUDED.cover_photo_url, channels.cover_photo_url),
+       review_photo_url = COALESCE(EXCLUDED.review_photo_url, channels.review_photo_url),
+       description = COALESCE(EXCLUDED.description, channels.description),
+       is_active = true
      RETURNING *`,
     [
       data.channel_id,
@@ -92,8 +99,35 @@ export async function addChannel(data: {
   return res.rows[0] as unknown as Channel;
 }
 
+export async function updateChannel(
+  id: number,
+  patch: Partial<{
+    manhwa_title: string;
+    price: number;
+    cover_photo_url: string | null;
+    review_photo_url: string | null;
+    description: string | null;
+    channel_name: string;
+  }>
+): Promise<Channel | null> {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+  for (const [key, value] of Object.entries(patch)) {
+    fields.push(`${key} = $${i++}`);
+    values.push(value);
+  }
+  if (fields.length === 0) return getChannelById(id);
+  values.push(id);
+  const res = await query(
+    `UPDATE channels SET ${fields.join(", ")} WHERE id = $${i} RETURNING *`,
+    values
+  );
+  return (res.rows[0] as unknown as Channel) || null;
+}
+
 export async function removeChannel(channelId: string): Promise<boolean> {
-  const res = await (pool as unknown as { query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number }> }).query(
+  const res = await query(
     "UPDATE channels SET is_active = false WHERE channel_id = $1",
     [channelId]
   );
@@ -136,17 +170,19 @@ export async function confirmPurchase(id: number, inviteLink: string): Promise<v
 }
 
 export async function cancelPurchase(id: number): Promise<void> {
-  await query(
-    "UPDATE purchases SET status = 'cancelled' WHERE id = $1",
-    [id]
+  await query("UPDATE purchases SET status = 'cancelled' WHERE id = $1", [id]);
+}
+
+export async function getRecentPurchases(limit: number = 10): Promise<Purchase[]> {
+  const res = await query(
+    "SELECT * FROM purchases ORDER BY created_at DESC LIMIT $1",
+    [limit]
   );
+  return res.rows as unknown as Purchase[];
 }
 
 export async function getBotSetting(key: string): Promise<string | null> {
-  const res = await query(
-    "SELECT value FROM bot_settings WHERE key = $1",
-    [key]
-  );
+  const res = await query("SELECT value FROM bot_settings WHERE key = $1", [key]);
   return (res.rows[0] as Record<string, string> | undefined)?.value || null;
 }
 
@@ -156,4 +192,8 @@ export async function setBotSetting(key: string, value: string): Promise<void> {
      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
     [key, value]
   );
+}
+
+export async function deleteBotSetting(key: string): Promise<void> {
+  await query("DELETE FROM bot_settings WHERE key = $1", [key]);
 }

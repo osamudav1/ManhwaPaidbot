@@ -1,26 +1,40 @@
-import type { Telegraf, Context } from "telegraf";
+import type { Telegraf } from "telegraf";
 import { Markup } from "telegraf";
 import {
   getAllActiveChannels,
-  getChannelByManhwaTitle,
+  getChannelById,
+  getChannelByChannelId,
   createPurchase,
   getPurchaseById,
   confirmPurchase,
   cancelPurchase,
   getBotSetting,
   setBotSetting,
+  deleteBotSetting,
   addChannel,
+  updateChannel,
   removeChannel,
   updatePurchaseScreenshot,
+  getRecentPurchases,
 } from "./db.js";
 import {
+  getStartKeyboard,
   getManhwaListKeyboard,
   getManhwaDetailKeyboard,
   getPaymentKeyboard,
   getOwnerConfirmKeyboard,
   getBackToListKeyboard,
+  getAdminPanelKeyboard,
+  getAdminManhwaListKeyboard,
+  getAdminEditManhwaKeyboard,
+  getDeleteConfirmKeyboard,
+  getWelcomeSettingsKeyboard,
+  getMainChannelSettingsKeyboard,
+  getCancelKeyboard,
+  getSkipCancelKeyboard,
+  getAddManhwaConfirmKeyboard,
 } from "./keyboards.js";
-import { getUserState, setUserState, clearUserState } from "./states.js";
+import { getUserState, setUserState, updateUserState, clearUserState } from "./states.js";
 import { logger } from "../lib/logger.js";
 
 const OWNER_ID = parseInt(process.env.OWNER_TELEGRAM_ID || "0", 10);
@@ -31,81 +45,116 @@ function isOwner(userId: number): boolean {
   return userId === OWNER_ID;
 }
 
+async function safeReply(ctx: any, text: string, extra?: any) {
+  try {
+    return await ctx.reply(text, extra);
+  } catch (err) {
+    logger.error({ err }, "safeReply failed");
+  }
+}
+
+async function showStartScreen(ctx: any) {
+  const userId = ctx.from.id;
+  clearUserState(userId);
+
+  const welcomeCaption = await getBotSetting("welcome_caption");
+  const welcomePhoto = await getBotSetting("welcome_photo_url");
+  const mainChannelLink = await getBotSetting("main_channel_link");
+  const mainChannelName = (await getBotSetting("main_channel_name")) || "Main Channel";
+  const channels = await getAllActiveChannels();
+
+  const caption = welcomeCaption || "မင်္ဂလာပါ! Manhwa Store မှ ကြိုဆိုပါသည်။";
+  const keyboard = getStartKeyboard(mainChannelLink, mainChannelName, OWNER_ID, isOwner(userId));
+
+  if (welcomePhoto) {
+    try {
+      await ctx.replyWithPhoto(welcomePhoto, { caption, ...keyboard });
+    } catch {
+      await safeReply(ctx, caption, keyboard);
+    }
+  } else {
+    await safeReply(ctx, caption, keyboard);
+  }
+
+  if (channels.length > 0) {
+    await safeReply(
+      ctx,
+      "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
+      getManhwaListKeyboard(channels)
+    );
+  } else {
+    await safeReply(
+      ctx,
+      "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 😊"
+    );
+  }
+}
+
+async function showAdminPanel(ctx: any) {
+  const userId = ctx.from.id;
+  if (!isOwner(userId)) return;
+  clearUserState(userId);
+
+  const channels = await getAllActiveChannels();
+  const text =
+    `🔧 *Admin Panel*\n\n` +
+    `📚 Manhwa စုစုပေါင်း: *${channels.length}*\n` +
+    `💼 Owner ID: \`${OWNER_ID}\`\n\n` +
+    `လုပ်ဆောင်လိုသည့် item ကို ရွေးပါ:`;
+
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: "Markdown",
+      ...getAdminPanelKeyboard(),
+    });
+  } catch {
+    await safeReply(ctx, text, {
+      parse_mode: "Markdown",
+      ...getAdminPanelKeyboard(),
+    });
+  }
+}
+
 export function registerHandlers(bot: Telegraf) {
-  // /start command
+  // ===== /start =====
   bot.start(async (ctx) => {
     try {
-      clearUserState(ctx.from.id);
-      const welcomeCaption = await getBotSetting("welcome_caption");
-      const welcomePhoto = await getBotSetting("welcome_photo_url");
-      const mainChannelLink = await getBotSetting("main_channel_link");
-      const mainChannelName = (await getBotSetting("main_channel_name")) || "Main Channel";
-      const channels = await getAllActiveChannels();
-
-      const inlineButtons: ReturnType<typeof Markup.button.callback>[][] = [];
-
-      if (mainChannelLink) {
-        inlineButtons.push([Markup.button.url(`📢 ${mainChannelName}`, mainChannelLink)]);
-      }
-      inlineButtons.push([
-        Markup.button.callback("❓ Help", "help"),
-        Markup.button.url("📞 Contact", `tg://user?id=${OWNER_ID}`),
-      ]);
-
-      const mainKeyboard = Markup.inlineKeyboard(inlineButtons);
-      const caption = welcomeCaption || "မင်္ဂလာပါ! Manhwa Store မှ ကြိုဆိုပါသည်။";
-
-      if (welcomePhoto) {
-        try {
-          await ctx.replyWithPhoto(welcomePhoto, {
-            caption,
-            ...mainKeyboard,
-          });
-        } catch {
-          await ctx.reply(caption, mainKeyboard);
-        }
-      } else {
-        await ctx.reply(caption, mainKeyboard);
-      }
-
-      if (channels.length > 0) {
-        await ctx.reply(
-          "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
-          getManhwaListKeyboard(channels)
-        );
-      } else {
-        await ctx.reply(
-          "ဇာတ်ကားများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည်။ နောက်မှ ပြန်စစ်ဆေးပါ 😊"
-        );
-      }
+      await showStartScreen(ctx);
     } catch (err) {
       logger.error({ err }, "Error in /start handler");
-      await ctx.reply("တစ်ခုခု မှားသွားပါသည်။ /start ကို ထပ်ကြိုးစားပါ။");
+      await safeReply(ctx, "တစ်ခုခု မှားသွားပါသည်။ /start ကို ထပ်ကြိုးစားပါ။");
     }
   });
 
-  // Help callback
+  // ===== /admin (quick access for owner) =====
+  bot.command("admin", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await showAdminPanel(ctx);
+  });
+
+  // ===== Help =====
   bot.action("help", async (ctx) => {
     await ctx.answerCbQuery();
-    await ctx.reply(
+    await safeReply(
+      ctx,
       "📖 *အသုံးပြုနည်း*\n\n" +
         "1️⃣ ဇာတ်ကားစာရင်းမှ ကြိုက်သောကားကို ရွေးပါ\n" +
         "2️⃣ Review ကြည့်ပြီး ဝယ်ယူရန် နှိပ်ပါ\n" +
-        "3️⃣ ငွေပေးချေမှု နည်းလမ်း ရွေးပါ\n" +
+        "3️⃣ ငွေပေးချေမှု နည်းလမ်း ရွေးပါ (Wave / KPay)\n" +
         "4️⃣ ပြေစာ Screenshot ပို့ပါ\n" +
-        "5️⃣ Owner မှ အတည်ပြုပြီးနောက် Channel Link ရပါမည်\n\n" +
+        "5️⃣ Owner မှ အတည်ပြုပြီးနောက် Channel Invite Link ရပါမည်\n\n" +
         "❓ အကူအညီ လိုအပ်ပါက Owner ကို ဆက်သွယ်ပါ",
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
           [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
-          [Markup.button.callback("🔙 နောက်သို့", "back_to_list")],
+          [Markup.button.callback("🔙 ပင်မမျက်နှာသို့", "back_to_list")],
         ]),
       }
     );
   });
 
-  // Back to manhwa list
+  // ===== Back to manhwa list =====
   bot.action("back_to_list", async (ctx) => {
     await ctx.answerCbQuery();
     clearUserState(ctx.from.id);
@@ -117,70 +166,76 @@ export function registerHandlers(bot: Telegraf) {
           getManhwaListKeyboard(channels)
         );
       } catch {
-        await ctx.reply(
-          "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ\n\nကြိုက်နှစ်သက်သော ဇာတ်ကားကို ရွေးချယ်ပါ:",
+        await safeReply(
+          ctx,
+          "📚 ရရှိနိုင်သော Manhwa ဇာတ်ကားများ:",
           getManhwaListKeyboard(channels)
         );
       }
     } else {
-      await ctx.reply("ဇာတ်ကားများ မရှိသေးပါ။");
+      await safeReply(ctx, "ဇာတ်ကားများ မရှိသေးပါ။");
     }
   });
 
-  // Manhwa selection
-  bot.action(/^manhwa_(.+)$/, async (ctx) => {
+  // ===== Manhwa selection (User flow) =====
+  bot.action(/^manhwa_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const title = ctx.match[1];
-    const channel = await getChannelByManhwaTitle(title);
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
     if (!channel) {
-      await ctx.reply("ဇာတ်ကား မတွေ့ပါ။");
+      await safeReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
       return;
     }
 
     setUserState(ctx.from.id, {
-      selectedManhwa: title,
+      selectedManhwa: channel.manhwa_title,
       selectedChannelId: channel.channel_id,
     });
 
     const text =
       `📖 *${channel.manhwa_title}*\n\n` +
       (channel.description ? `${channel.description}\n\n` : "") +
-      `💰 ဈေးနှုန်း: *${channel.price} ကျပ်*`;
+      `💰 ဈေးနှုန်း: *${channel.price.toLocaleString()} ကျပ်*`;
 
     if (channel.review_photo_url) {
       try {
         await ctx.replyWithPhoto(channel.review_photo_url, {
           caption: text,
           parse_mode: "Markdown",
-          ...getManhwaDetailKeyboard(title),
+          ...getManhwaDetailKeyboard(channel.id),
         });
-      } catch {
-        await ctx.reply(text, { parse_mode: "Markdown", ...getManhwaDetailKeyboard(title) });
+        return;
+      } catch (err) {
+        logger.error({ err }, "Failed to send review photo");
       }
-    } else {
-      await ctx.reply(text, { parse_mode: "Markdown", ...getManhwaDetailKeyboard(title) });
     }
+    await safeReply(ctx, text, {
+      parse_mode: "Markdown",
+      ...getManhwaDetailKeyboard(channel.id),
+    });
   });
 
-  // Buy button
-  bot.action(/^buy_(.+)$/, async (ctx) => {
+  // ===== Buy button =====
+  bot.action(/^buy_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const title = ctx.match[1];
-    await ctx.reply(
-      `💳 *${title}* အတွက် ငွေပေးချေမှု နည်းလမ်း ရွေးပါ:`,
-      { parse_mode: "Markdown", ...getPaymentKeyboard(title) }
-    );
-  });
-
-  // Wave Pay selected
-  bot.action(/^pay_wave_(.+)$/, async (ctx) => {
-    await ctx.answerCbQuery();
-    const title = ctx.match[1];
-    const channel = await getChannelByManhwaTitle(title);
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
     if (!channel) {
-      await ctx.reply("ဇာတ်ကား မတွေ့ပါ။");
+      await safeReply(ctx, "ဇာတ်ကား မတွေ့ပါ။");
       return;
     }
+    await safeReply(ctx, `💳 *${channel.manhwa_title}* အတွက် ငွေပေးချေမှုနည်းလမ်း ရွေးပါ:`, {
+      parse_mode: "Markdown",
+      ...getPaymentKeyboard(channel.id),
+    });
+  });
+
+  // ===== Wave Pay =====
+  bot.action(/^pay_wave_(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
+    if (!channel) return;
 
     const purchase = await createPurchase({
       user_id: String(ctx.from.id),
@@ -192,36 +247,34 @@ export function registerHandlers(bot: Telegraf) {
 
     setUserState(ctx.from.id, {
       action: "waiting_screenshot",
-      selectedManhwa: title,
+      selectedManhwa: channel.manhwa_title,
       selectedChannelId: channel.channel_id,
       paymentMethod: "wave",
       purchaseId: purchase.id,
     });
 
-    await ctx.reply(
+    await safeReply(
+      ctx,
       `💳 *Wave Pay ဖြင့် ငွေပေးချေရန်*\n\n` +
         `📖 ဇာတ်ကား: *${channel.manhwa_title}*\n` +
-        `💰 ငွေပမာဏ: *${channel.price} ကျပ်*\n\n` +
+        `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
         `Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n\n` +
         `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
         ]),
       }
     );
   });
 
-  // KPay selected
-  bot.action(/^pay_kpay_(.+)$/, async (ctx) => {
+  // ===== KPay =====
+  bot.action(/^pay_kpay_(\d+)$/, async (ctx) => {
     await ctx.answerCbQuery();
-    const title = ctx.match[1];
-    const channel = await getChannelByManhwaTitle(title);
-    if (!channel) {
-      await ctx.reply("ဇာတ်ကား မတွေ့ပါ။");
-      return;
-    }
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
+    if (!channel) return;
 
     const purchase = await createPurchase({
       user_id: String(ctx.from.id),
@@ -233,18 +286,19 @@ export function registerHandlers(bot: Telegraf) {
 
     setUserState(ctx.from.id, {
       action: "waiting_screenshot",
-      selectedManhwa: title,
+      selectedManhwa: channel.manhwa_title,
       selectedChannelId: channel.channel_id,
       paymentMethod: "kpay",
       purchaseId: purchase.id,
     });
 
-    await ctx.reply(
+    await safeReply(
+      ctx,
       `📱 *KPay ဖြင့် ငွေပေးချေရန်*\n\n` +
         `📖 ဇာတ်ကား: *${channel.manhwa_title}*\n` +
-        `💰 ငွေပမာဏ: *${channel.price} ကျပ်*\n\n` +
+        `💰 ငွေပမာဏ: *${channel.price.toLocaleString()} ကျပ်*\n\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `📱 KPay ဖုန်းနံပါတ်: \`${KPAY_PHONE}\`\n` +
+        `📱 KPay နံပါတ်: \`${KPAY_PHONE}\`\n` +
         `👤 အမည်: *${KPAY_NAME}*\n` +
         `━━━━━━━━━━━━━━━━\n\n` +
         `ငွေလွှဲပြီးပါက ပြေစာ Screenshot ကို ဤဘော့ထဲ ပေးပို့ပါ 📸`,
@@ -252,7 +306,7 @@ export function registerHandlers(bot: Telegraf) {
     );
   });
 
-  // Owner: Confirm purchase
+  // ===== Owner: Confirm Purchase =====
   bot.action(/^confirm_(\d+)$/, async (ctx) => {
     if (!isOwner(ctx.from.id)) {
       await ctx.answerCbQuery("Permission မရှိပါ။");
@@ -263,11 +317,11 @@ export function registerHandlers(bot: Telegraf) {
     const purchaseId = parseInt(ctx.match[1], 10);
     const purchase = await getPurchaseById(purchaseId);
     if (!purchase) {
-      await ctx.reply("Purchase မတွေ့ပါ။");
+      await safeReply(ctx, "Purchase မတွေ့ပါ။");
       return;
     }
     if (purchase.status !== "pending") {
-      await ctx.reply(`ဤ Purchase ကို ပြီးသားဖြစ်ပါသည်: ${purchase.status}`);
+      await safeReply(ctx, `ဤ Purchase ကို လုပ်ဆောင်ပြီးသား: ${purchase.status}`);
       return;
     }
 
@@ -275,7 +329,7 @@ export function registerHandlers(bot: Telegraf) {
       const channelIdNum = parseInt(purchase.channel_id, 10);
       const inviteResult = await bot.telegram.createChatInviteLink(channelIdNum, {
         member_limit: 1,
-        name: `Manhwa Purchase #${purchaseId}`,
+        name: `Purchase #${purchaseId}`,
       });
 
       const inviteLink = inviteResult.invite_link;
@@ -288,32 +342,51 @@ export function registerHandlers(bot: Telegraf) {
         `(တစ်ဦးတစ်ယောက်သာ ဝင်လို့ရသော Link ဖြစ်ပါသဖြင့် မည်သူ့မှ မျှဝေပါနှင့်)\n\n` +
         `Link နှိပ်ပြီး တန်းဝင်ပေးပါ 👇\n\n` +
         `${inviteLink}\n\n` +
-        `⚠️ တန်းဝင်ပါ - Link ကုန်ဆုံးပါမည်`;
+        `⚠️ တန်းဝင်ပါ - Link တစ်ခါသာ အသုံးပြုနိုင်ပါ`;
 
       await bot.telegram.sendMessage(parseInt(purchase.user_id, 10), userMessage, {
         parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "📞 Owner ကို ဆက်သွယ်ရန်", url: `tg://user?id=${OWNER_ID}` }],
+          ],
+        },
       });
 
-      const originalText =
-        (ctx.callbackQuery.message as { text?: string } | undefined)?.text || "";
+      const originalCaption =
+        (ctx.callbackQuery.message as { caption?: string; text?: string } | undefined)?.caption ||
+        (ctx.callbackQuery.message as { text?: string } | undefined)?.text ||
+        "";
+
       try {
-        await ctx.editMessageText(
-          originalText + `\n\n✅ Confirmed! Invite link sent.\n${inviteLink}`
-        );
+        if ((ctx.callbackQuery.message as any)?.caption !== undefined) {
+          await ctx.editMessageCaption(
+            originalCaption + `\n\n✅ *Confirmed!*\n${inviteLink}`,
+            { parse_mode: "Markdown" }
+          );
+        } else {
+          await ctx.editMessageText(
+            originalCaption + `\n\n✅ *Confirmed!*\n${inviteLink}`,
+            { parse_mode: "Markdown" }
+          );
+        }
       } catch {
-        await ctx.reply(`✅ Confirmed! Invite link: ${inviteLink}`);
+        await safeReply(ctx, `✅ Confirmed!\n${inviteLink}`);
       }
     } catch (err) {
       logger.error({ err }, "Error creating invite link");
-      await ctx.reply(
-        `❌ Invite link ထုတ်ရာတွင် အမှားဖြစ်သည်။\n` +
-          `Bot သည် Channel Admin ဖြစ်ရမည်၊ Invite Link permission ရှိရမည်။\n\n` +
+      await safeReply(
+        ctx,
+        `❌ Invite link ထုတ်ရာတွင် အမှားဖြစ်သည်။\n\n` +
+          `**လိုအပ်ချက်:**\n` +
+          `• Bot သည် Channel ၏ Admin ဖြစ်ရမည်\n` +
+          `• "Invite Users via Link" permission ရှိရမည်\n\n` +
           `Error: ${String(err)}`
       );
     }
   });
 
-  // Owner: Cancel purchase
+  // ===== Owner: Cancel Purchase =====
   bot.action(/^cancel_(\d+)$/, async (ctx) => {
     if (!isOwner(ctx.from.id)) {
       await ctx.answerCbQuery("Permission မရှိပါ။");
@@ -324,74 +397,554 @@ export function registerHandlers(bot: Telegraf) {
     const purchaseId = parseInt(ctx.match[1], 10);
     const purchase = await getPurchaseById(purchaseId);
     if (!purchase) {
-      await ctx.reply("Purchase မတွေ့ပါ။");
+      await safeReply(ctx, "Purchase မတွေ့ပါ။");
       return;
     }
 
     await cancelPurchase(purchaseId);
 
-    await bot.telegram.sendMessage(
-      parseInt(purchase.user_id, 10),
-      `❌ Purchase #${purchaseId} ကို ပယ်ဖျက်လိုက်ပါသည်။\nမေးခွန်းများ ရှိပါက Owner ကို ဆက်သွယ်ပါ။`
-    );
-
-    const originalText =
-      (ctx.callbackQuery.message as { text?: string } | undefined)?.text || "";
     try {
-      await ctx.editMessageText(originalText + "\n\n❌ Cancelled by owner.");
+      await bot.telegram.sendMessage(
+        parseInt(purchase.user_id, 10),
+        `❌ Purchase #${purchaseId} ကို ပယ်ဖျက်လိုက်ပါသည်။\nမေးခွန်းများ ရှိပါက Owner ကို ဆက်သွယ်ပါ။`
+      );
+    } catch (err) {
+      logger.error({ err }, "Failed to notify user of cancellation");
+    }
+
+    const originalCaption =
+      (ctx.callbackQuery.message as { caption?: string; text?: string } | undefined)?.caption ||
+      (ctx.callbackQuery.message as { text?: string } | undefined)?.text ||
+      "";
+
+    try {
+      if ((ctx.callbackQuery.message as any)?.caption !== undefined) {
+        await ctx.editMessageCaption(originalCaption + "\n\n❌ Cancelled by owner.");
+      } else {
+        await ctx.editMessageText(originalCaption + "\n\n❌ Cancelled by owner.");
+      }
     } catch {
-      await ctx.reply("❌ Cancelled.");
+      await safeReply(ctx, "❌ Cancelled.");
     }
   });
 
-  // Handle photo messages
-  bot.on("photo", async (ctx) => {
-    const userId = ctx.from.id;
-    const state = getUserState(userId);
+  // =====================================
+  // ===== ADMIN PANEL ACTIONS ===========
+  // =====================================
 
-    // Owner setting welcome photo
-    if (isOwner(userId) && state.action === "setting_welcome_photo") {
-      const photo = ctx.message.photo;
-      const fileId = photo[photo.length - 1].file_id;
-      await setBotSetting("welcome_photo_url", fileId);
-      setUserState(userId, { action: "setting_welcome_caption" });
-      await ctx.reply("✅ Welcome Photo သိမ်းပြီး!\n\nWelcome Caption ရိုက်ပါ (ဥပမာ: မင်္ဂလာပါ! Store မှ ကြိုဆိုပါသည်):");
+  bot.action("admin_panel", async (ctx) => {
+    if (!isOwner(ctx.from.id)) {
+      await ctx.answerCbQuery("Permission မရှိပါ။");
+      return;
+    }
+    await ctx.answerCbQuery();
+    await showAdminPanel(ctx);
+  });
+
+  bot.action("admin_close", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("ပိတ်လိုက်ပါပြီ");
+    try {
+      await ctx.deleteMessage();
+    } catch {
+      // ignore
+    }
+  });
+
+  bot.action(/^cancel_action_(.+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("Cancelled");
+    clearUserState(ctx.from.id);
+    const returnTo = ctx.match[1];
+    if (returnTo === "admin_panel") {
+      await showAdminPanel(ctx);
+    }
+  });
+
+  // ===== Add Manhwa =====
+  bot.action("admin_add_manhwa", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    setUserState(ctx.from.id, { action: "add_step_channel" });
+    try {
+      await ctx.editMessageText(
+        `➕ *Manhwa အသစ်ထည့်ရန် (Step 1/5)*\n\n` +
+          `Channel ID ပို့ပါ\n` +
+          `*သို့မဟုတ်* Channel ထဲက message တစ်ခုကို Forward လုပ်ပါ\n\n` +
+          `_ဥပမာ Channel ID: -1001234567890_\n\n` +
+          `⚠️ Bot ကို Channel ထဲ Admin အဖြစ် ထည့်ထားရန် မမေ့ပါနှင့်`,
+        { parse_mode: "Markdown", ...getCancelKeyboard() }
+      );
+    } catch {
+      await safeReply(
+        ctx,
+        `➕ *Manhwa အသစ်ထည့်ရန်*\n\nChannel ID ပို့ပါ သို့မဟုတ် Channel က message တစ်ခု Forward လုပ်ပါ`,
+        { parse_mode: "Markdown", ...getCancelKeyboard() }
+      );
+    }
+  });
+
+  // ===== Manage Manhwa =====
+  bot.action("admin_manage_manhwa", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    clearUserState(ctx.from.id);
+    const channels = await getAllActiveChannels();
+    if (channels.length === 0) {
+      try {
+        await ctx.editMessageText(
+          "📋 *Manhwa စာရင်း*\n\nManhwa မရှိသေးပါ။ ➕ ဖြင့် ထည့်ပေးပါ။",
+          {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback("➕ Manhwa ထည့်ရန်", "admin_add_manhwa")],
+              [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+            ]),
+          }
+        );
+      } catch {
+        await safeReply(ctx, "Manhwa မရှိသေးပါ။");
+      }
       return;
     }
 
-    // User sending payment screenshot
+    try {
+      await ctx.editMessageText(
+        `📋 *Manhwa စာရင်း*\n\nစီမံခန့်ခွဲမည့် ဇာတ်ကားကို ရွေးပါ:`,
+        { parse_mode: "Markdown", ...getAdminManhwaListKeyboard(channels) }
+      );
+    } catch {
+      await safeReply(ctx, `📋 Manhwa စာရင်း:`, getAdminManhwaListKeyboard(channels));
+    }
+  });
+
+  bot.action(/^admin_edit_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
+    if (!channel) {
+      await safeReply(ctx, "Channel မတွေ့ပါ။");
+      return;
+    }
+
+    const text =
+      `📖 *${channel.manhwa_title}*\n\n` +
+      `🆔 Channel ID: \`${channel.channel_id}\`\n` +
+      `📛 Channel Name: ${channel.channel_name}\n` +
+      `💰 ဈေးနှုန်း: ${channel.price.toLocaleString()} ကျပ်\n` +
+      `🖼️ Cover: ${channel.cover_photo_url ? "✅" : "❌"}\n` +
+      `📸 Review: ${channel.review_photo_url ? "✅" : "❌"}\n` +
+      `📝 ဖော်ပြချက်: ${channel.description ? "✅" : "❌"}`;
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        ...getAdminEditManhwaKeyboard(channelDbId),
+      });
+    } catch {
+      await safeReply(ctx, text, {
+        parse_mode: "Markdown",
+        ...getAdminEditManhwaKeyboard(channelDbId),
+      });
+    }
+  });
+
+  bot.action(/^edit_title_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    setUserState(ctx.from.id, { action: "edit_title", editChannelId: String(channelDbId) });
+    await safeReply(ctx, "ဇာတ်ကားအမည် အသစ် ရိုက်ပါ:", getCancelKeyboard());
+  });
+
+  bot.action(/^edit_price_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    setUserState(ctx.from.id, { action: "edit_price", editChannelId: String(channelDbId) });
+    await safeReply(ctx, "ဈေးနှုန်း အသစ် (ကျပ်) ရိုက်ပါ:", getCancelKeyboard());
+  });
+
+  bot.action(/^edit_cover_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    setUserState(ctx.from.id, { action: "edit_cover", editChannelId: String(channelDbId) });
+    await safeReply(ctx, "Cover Photo အသစ် ပို့ပါ:", getCancelKeyboard());
+  });
+
+  bot.action(/^edit_review_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    setUserState(ctx.from.id, { action: "edit_review", editChannelId: String(channelDbId) });
+    await safeReply(ctx, "Review Photo အသစ် ပို့ပါ:", getCancelKeyboard());
+  });
+
+  bot.action(/^edit_desc_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    setUserState(ctx.from.id, { action: "edit_desc", editChannelId: String(channelDbId) });
+    await safeReply(ctx, "ဖော်ပြချက် အသစ် ရိုက်ပါ:", getCancelKeyboard());
+  });
+
+  bot.action(/^delete_manhwa_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
+    if (!channel) return;
+    try {
+      await ctx.editMessageText(
+        `🗑️ *${channel.manhwa_title}* ကို ဖျက်မည်လား?\n\nဤ Manhwa ကို User စာရင်းမှ ဖယ်ထုတ်ပါမည်။`,
+        { parse_mode: "Markdown", ...getDeleteConfirmKeyboard(channelDbId) }
+      );
+    } catch {
+      await safeReply(ctx, `${channel.manhwa_title} ကို ဖျက်မည်လား?`, getDeleteConfirmKeyboard(channelDbId));
+    }
+  });
+
+  bot.action(/^delete_confirm_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("ဖျက်ပြီး");
+    const channelDbId = parseInt(ctx.match[1], 10);
+    const channel = await getChannelById(channelDbId);
+    if (!channel) return;
+    await removeChannel(channel.channel_id);
+    try {
+      await ctx.editMessageText(
+        `✅ *${channel.manhwa_title}* ကို ဖျက်ပြီးပါပြီ။`,
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+          ]),
+        }
+      );
+    } catch {
+      await safeReply(ctx, "✅ ဖျက်ပြီးပါပြီ။");
+    }
+  });
+
+  // ===== Welcome Settings =====
+  bot.action("admin_welcome", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    clearUserState(ctx.from.id);
+    const photo = await getBotSetting("welcome_photo_url");
+    const caption = await getBotSetting("welcome_caption");
+    const text =
+      `🎨 *Welcome Settings*\n\n` +
+      `🖼️ Photo: ${photo ? "✅ ထည့်ထားပြီး" : "❌ မထည့်ရသေး"}\n` +
+      `📝 Caption:\n${caption ? `_${caption.slice(0, 200)}${caption.length > 200 ? "..." : ""}_` : "_မထည့်ရသေး_"}`;
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        ...getWelcomeSettingsKeyboard(),
+      });
+    } catch {
+      await safeReply(ctx, text, { parse_mode: "Markdown", ...getWelcomeSettingsKeyboard() });
+    }
+  });
+
+  bot.action("set_welcome_photo", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    setUserState(ctx.from.id, { action: "set_welcome_photo" });
+    await safeReply(ctx, "🖼️ Welcome Photo ကို ပို့ပါ:", getCancelKeyboard());
+  });
+
+  bot.action("set_welcome_caption", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    setUserState(ctx.from.id, { action: "set_welcome_caption" });
+    await safeReply(ctx, "📝 Welcome Caption (စာသား) ရိုက်ပါ:", getCancelKeyboard());
+  });
+
+  bot.action("preview_welcome", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("Preview...");
+    const photo = await getBotSetting("welcome_photo_url");
+    const caption = (await getBotSetting("welcome_caption")) || "မင်္ဂလာပါ!";
+    if (photo) {
+      try {
+        await ctx.replyWithPhoto(photo, { caption });
+      } catch {
+        await safeReply(ctx, `Caption: ${caption}\n\n(Photo error)`);
+      }
+    } else {
+      await safeReply(ctx, `(No Photo)\n\n${caption}`);
+    }
+  });
+
+  // ===== Main Channel Settings =====
+  bot.action("admin_mainchannel", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    clearUserState(ctx.from.id);
+    const link = await getBotSetting("main_channel_link");
+    const name = await getBotSetting("main_channel_name");
+    const text =
+      `📢 *Main Channel Settings*\n\n` +
+      `🔗 Link: ${link ? `\`${link}\`` : "_မထည့်ရသေး_"}\n` +
+      `📛 Name: ${name ? `*${name}*` : "_မထည့်ရသေး_"}`;
+
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        ...getMainChannelSettingsKeyboard(),
+      });
+    } catch {
+      await safeReply(ctx, text, { parse_mode: "Markdown", ...getMainChannelSettingsKeyboard() });
+    }
+  });
+
+  bot.action("set_main_link", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    setUserState(ctx.from.id, { action: "set_main_link" });
+    await safeReply(
+      ctx,
+      "🔗 Main Channel Link ပို့ပါ\n\n_ဥပမာ: https://t.me/yourchannel_",
+      { parse_mode: "Markdown", ...getCancelKeyboard() }
+    );
+  });
+
+  bot.action("remove_main_channel", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("ဖယ်ရှားပြီး");
+    await deleteBotSetting("main_channel_link");
+    await deleteBotSetting("main_channel_name");
+    await safeReply(ctx, "✅ Main Channel ဖယ်ရှားပြီးပါပြီ။", Markup.inlineKeyboard([
+      [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+    ]));
+  });
+
+  // ===== Purchases =====
+  bot.action("admin_purchases", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    const purchases = await getRecentPurchases(10);
+    if (purchases.length === 0) {
+      try {
+        await ctx.editMessageText("📊 *Purchase Records*\n\nMagic မရှိသေးပါ။", {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]]),
+        });
+      } catch {
+        await safeReply(ctx, "Purchase မရှိသေးပါ။");
+      }
+      return;
+    }
+    const lines = purchases.map((p) => {
+      const status = p.status === "confirmed" ? "✅" : p.status === "cancelled" ? "❌" : "⏳";
+      const user = p.username ? `@${p.username}` : p.first_name || p.user_id;
+      return `${status} #${p.id} | ${user} | ${p.payment_method.toUpperCase()}`;
+    });
+    const text = `📊 *နောက်ဆုံး Purchases (${purchases.length})*\n\n${lines.join("\n")}`;
+    try {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]]),
+      });
+    } catch {
+      await safeReply(ctx, text, { parse_mode: "Markdown" });
+    }
+  });
+
+  // ===== Add Manhwa: Confirm step =====
+  bot.action("confirm_add_manhwa", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery("Saving...");
+    const state = getUserState(ctx.from.id);
+    if (!state.draftChannelId || !state.draftManhwaTitle || state.draftPrice === undefined) {
+      await safeReply(ctx, "Data မပြည့်စုံပါ။ Cancel ပြီး ပြန်စပါ။");
+      return;
+    }
+    await addChannel({
+      channel_id: state.draftChannelId,
+      channel_name: state.draftChannelName || state.draftManhwaTitle,
+      manhwa_title: state.draftManhwaTitle,
+      price: state.draftPrice,
+      cover_photo_url: state.draftCoverFileId,
+      review_photo_url: state.draftReviewFileId,
+      description: state.draftDescription,
+    });
+    clearUserState(ctx.from.id);
+    await safeReply(
+      ctx,
+      `✅ *${state.draftManhwaTitle}* ထည့်ပြီးပါပြီ!`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("➕ နောက်တစ်ခုထည့်ရန်", "admin_add_manhwa")],
+          [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+        ]),
+      }
+    );
+  });
+
+  // ===== Skip actions for add manhwa =====
+  bot.action("skip_cover", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    updateUserState(ctx.from.id, { action: "add_step_review" });
+    await safeReply(
+      ctx,
+      `📸 *Step 4/5: Review Photo*\n\nReview Photo ကို ပို့ပါ\n(User က ဇာတ်ကား မဝယ်ခင် ပြသမည်)`,
+      { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_review") }
+    );
+  });
+
+  bot.action("skip_review", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    updateUserState(ctx.from.id, { action: "add_step_description" });
+    await safeReply(
+      ctx,
+      `📝 *Step 5/5: ဖော်ပြချက်*\n\nManhwa ဖော်ပြချက် ရိုက်ပါ\n(ဥပမာ: ဇာတ်လမ်း အကျဉ်းချုပ်)`,
+      { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_description") }
+    );
+  });
+
+  bot.action("skip_description", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    await ctx.answerCbQuery();
+    await showAddManhwaSummary(ctx);
+  });
+
+  async function showAddManhwaSummary(ctx: any) {
+    const state = getUserState(ctx.from.id);
+    const text =
+      `📋 *သိမ်းမည့် အချက်အလက်များ*\n\n` +
+      `🆔 Channel ID: \`${state.draftChannelId}\`\n` +
+      `📛 Channel Name: ${state.draftChannelName || "_(Manhwa title နှင့် တူ)_"}\n` +
+      `📖 Manhwa Title: *${state.draftManhwaTitle}*\n` +
+      `💰 ဈေးနှုန်း: ${state.draftPrice?.toLocaleString()} ကျပ်\n` +
+      `🖼️ Cover: ${state.draftCoverFileId ? "✅" : "❌"}\n` +
+      `📸 Review: ${state.draftReviewFileId ? "✅" : "❌"}\n` +
+      `📝 ဖော်ပြချက်: ${state.draftDescription ? `\n_${state.draftDescription}_` : "❌"}\n\n` +
+      `သိမ်းမည်လား?`;
+    await safeReply(ctx, text, { parse_mode: "Markdown", ...getAddManhwaConfirmKeyboard() });
+  }
+
+  // ===== Photo handler (welcome, cover, review, screenshot) =====
+  bot.on("photo", async (ctx) => {
+    const userId = ctx.from.id;
+    const state = getUserState(userId);
+    const photo = ctx.message.photo;
+    const fileId = photo[photo.length - 1].file_id;
+
+    // Owner: forwarded channel post during add_step_channel
+    if (isOwner(userId) && state.action === "add_step_channel") {
+      const msg = ctx.message as any;
+      if (msg.forward_from_chat) {
+        const channelId = String(msg.forward_from_chat.id);
+        const channelName = msg.forward_from_chat.title || null;
+        updateUserState(userId, {
+          action: "add_step_title",
+          draftChannelId: channelId,
+          draftChannelName: channelName || undefined,
+        });
+        await safeReply(
+          ctx,
+          `✅ Channel ချိတ်ဆက်ပြီး!\n` +
+            `📛 Channel: ${channelName || channelId}\n` +
+            `🆔 ID: \`${channelId}\`\n\n` +
+            `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
+          { parse_mode: "Markdown", ...getCancelKeyboard() }
+        );
+        return;
+      }
+    }
+
+    // Owner: setting welcome photo
+    if (isOwner(userId) && state.action === "set_welcome_photo") {
+      await setBotSetting("welcome_photo_url", fileId);
+      clearUserState(userId);
+      await safeReply(ctx, "✅ Welcome Photo သိမ်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Welcome Settings", "admin_welcome")],
+      ]));
+      return;
+    }
+
+    // Owner: setting cover photo for new manhwa (add flow)
+    if (isOwner(userId) && state.action === "add_step_cover") {
+      updateUserState(userId, { draftCoverFileId: fileId, action: "add_step_review" });
+      await safeReply(
+        ctx,
+        `✅ Cover Photo သိမ်းပြီး!\n\n📸 *Step 4/5: Review Photo*\n\nReview Photo ပို့ပါ`,
+        { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_review") }
+      );
+      return;
+    }
+
+    // Owner: setting review photo (add flow)
+    if (isOwner(userId) && state.action === "add_step_review") {
+      updateUserState(userId, { draftReviewFileId: fileId, action: "add_step_description" });
+      await safeReply(
+        ctx,
+        `✅ Review Photo သိမ်းပြီး!\n\n📝 *Step 5/5: ဖော်ပြချက်*\n\nဖော်ပြချက် ရိုက်ပါ`,
+        { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_description") }
+      );
+      return;
+    }
+
+    // Owner: edit existing cover
+    if (isOwner(userId) && state.action === "edit_cover") {
+      const channelDbId = parseInt(state.editChannelId!, 10);
+      await updateChannel(channelDbId, { cover_photo_url: fileId });
+      clearUserState(userId);
+      await safeReply(ctx, "✅ Cover Photo ပြောင်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+      ]));
+      return;
+    }
+
+    // Owner: edit existing review
+    if (isOwner(userId) && state.action === "edit_review") {
+      const channelDbId = parseInt(state.editChannelId!, 10);
+      await updateChannel(channelDbId, { review_photo_url: fileId });
+      clearUserState(userId);
+      await safeReply(ctx, "✅ Review Photo ပြောင်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+      ]));
+      return;
+    }
+
+    // User: payment screenshot
     if (state.action === "waiting_screenshot") {
       const purchaseId = state.purchaseId;
       if (!purchaseId) {
-        await ctx.reply("Session မတွေ့ပါ။ /start ကို ထပ်နှိပ်ပါ။");
+        await safeReply(ctx, "Session မတွေ့ပါ။ /start ထပ်နှိပ်ပါ။");
         return;
       }
 
-      const photo = ctx.message.photo;
-      const fileId = photo[photo.length - 1].file_id;
       await updatePurchaseScreenshot(purchaseId, fileId);
 
-      const channel = state.selectedManhwa
-        ? await getChannelByManhwaTitle(state.selectedManhwa)
+      const channel = state.selectedChannelId
+        ? await getChannelByChannelId(state.selectedChannelId)
         : null;
       const manhwaTitle = channel?.manhwa_title || state.selectedManhwa || "Unknown";
 
-      await ctx.reply(
-        `✅ ပြေစာ ရရှိပါပြီ!\n\n` +
-          `Owner မှ စစ်ဆေးပြီးနောက် Channel Invite Link ပေးပို့ပါမည်။\n` +
-          `ခဏ စောင့်ဆိုင်းပါ 🙏`,
+      await safeReply(
+        ctx,
+        `✅ ပြေစာ ရရှိပါပြီ!\n\nOwner မှ စစ်ဆေးပြီးနောက် Channel Invite Link ပေးပို့ပါမည်။\nခဏ စောင့်ဆိုင်းပါ 🙏`,
         getBackToListKeyboard()
       );
 
-      const userMention =
-        ctx.from.username
-          ? `@${ctx.from.username}`
-          : `[${ctx.from.first_name || "User"}](tg://user?id=${userId})`;
+      const userMention = ctx.from.username
+        ? `@${ctx.from.username}`
+        : `[${ctx.from.first_name || "User"}](tg://user?id=${userId})`;
 
       const ownerMsg =
         `🛍️ *Purchase Request*\n\n` +
         `📖 ဇာတ်ကား: *${manhwaTitle}*\n` +
         `💳 ငွေပေးချေမှု: *${state.paymentMethod === "kpay" ? "KPay" : "Wave Pay"}*\n` +
+        `💰 ဈေးနှုန်း: *${channel?.price?.toLocaleString() || "N/A"} ကျပ်*\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `👤 User: ${userMention}\n` +
         `🆔 User ID: \`${userId}\`\n` +
@@ -400,241 +953,232 @@ export function registerHandlers(bot: Telegraf) {
         `🧾 Purchase ID: #${purchaseId}\n` +
         `━━━━━━━━━━━━━━━━`;
 
-      await bot.telegram.sendPhoto(OWNER_ID, fileId, {
-        caption: ownerMsg,
-        parse_mode: "Markdown",
-        ...getOwnerConfirmKeyboard(purchaseId),
-      });
+      try {
+        await bot.telegram.sendPhoto(OWNER_ID, fileId, {
+          caption: ownerMsg,
+          parse_mode: "Markdown",
+          ...getOwnerConfirmKeyboard(purchaseId),
+        });
+      } catch (err) {
+        logger.error({ err }, "Failed to send screenshot to owner");
+      }
 
       clearUserState(userId);
     }
   });
 
-  // Handle text messages (multi-step owner flows)
+  // ===== Forwarded messages: extract channel ID for "Add Manhwa" flow =====
+  // Telegraf 4 exposes forward info on `ctx.message` but types vary.
+  // We'll handle both in the text/photo handlers via message inspection.
+
+  // ===== Text handler (multi-step flows) =====
   bot.on("text", async (ctx) => {
     const userId = ctx.from.id;
     const state = getUserState(userId);
     const text = ctx.message.text;
 
+    if (text.startsWith("/")) return;
+
     if (!isOwner(userId)) return;
 
-    if (text.startsWith("/")) return; // commands handled separately
+    // ===== Add Manhwa Flow =====
+    if (state.action === "add_step_channel") {
+      // Check if forwarded from a channel
+      const msg = ctx.message as any;
+      let channelId: string | null = null;
+      let channelName: string | null = null;
 
-    if (state.action === "adding_channel_step1") {
-      // Expecting channel ID
-      setUserState(userId, {
-        action: "adding_channel_step2",
-        selectedChannelId: text.trim(),
-      });
-      await ctx.reply("Manhwa ဇာတ်ကား အမည် ရိုက်ပါ (ဥပမာ: Solo Leveling):");
-    } else if (state.action === "adding_channel_step2") {
-      setUserState(userId, {
-        ...state,
-        action: "adding_channel_step3",
-        selectedManhwa: text.trim(),
-      });
-      await ctx.reply("ဈေးနှုန်း (ကျပ်) ရိုက်ပါ (ဥပမာ: 3000):");
-    } else if (state.action === "adding_channel_step3") {
-      const price = parseInt(text.trim(), 10);
-      if (isNaN(price) || price < 0) {
-        await ctx.reply("ကျေးဇူးပြု၍ မှန်ကန်သော ဂဏန်း ရိုက်ပါ (ဥပမာ: 3000):");
+      if (msg.forward_from_chat) {
+        channelId = String(msg.forward_from_chat.id);
+        channelName = msg.forward_from_chat.title || null;
+      } else {
+        const trimmed = text.trim();
+        if (/^-?\d+$/.test(trimmed)) {
+          channelId = trimmed;
+        }
+      }
+
+      if (!channelId) {
+        await safeReply(
+          ctx,
+          "❌ Channel ID မှန်ကန်စွာ ပို့ပါ\n\n_ဥပမာ: -1001234567890_\nသို့မဟုတ် Channel ထဲက message တစ်ခုကို forward လုပ်ပါ",
+          { parse_mode: "Markdown", ...getCancelKeyboard() }
+        );
         return;
       }
-      setUserState(userId, {
-        ...state,
-        action: "adding_channel_step4",
-        purchaseId: price,
-      });
-      await ctx.reply(
-        "ဖော်ပြချက် ရိုက်ပါ (ဥပမာ: ကျော်ကြားသော Manhwa ကားကြီး)\n/skip ရိုက်ပါ ကျော်ဝင်ရန်:"
-      );
-    } else if (state.action === "adding_channel_step4") {
-      const description = text === "/skip" ? null : text.trim();
-      const channelId = state.selectedChannelId!;
-      const manhwaTitle = state.selectedManhwa!;
-      const price = state.purchaseId!;
 
-      let channelName = manhwaTitle;
-      try {
-        const chat = await bot.telegram.getChat(parseInt(channelId, 10));
-        if ("title" in chat) channelName = chat.title;
-      } catch {
-        channelName = manhwaTitle;
+      // Try to fetch channel info from Telegram if not from forward
+      if (!channelName) {
+        try {
+          const chat = await bot.telegram.getChat(parseInt(channelId, 10));
+          if ("title" in chat) channelName = chat.title;
+        } catch (err) {
+          logger.warn({ err, channelId }, "Could not fetch channel info");
+        }
       }
 
-      await addChannel({
-        channel_id: channelId,
-        channel_name: channelName,
-        manhwa_title: manhwaTitle,
-        price,
-        description: description || undefined,
+      updateUserState(userId, {
+        action: "add_step_title",
+        draftChannelId: channelId,
+        draftChannelName: channelName || undefined,
       });
 
-      clearUserState(userId);
-      await ctx.reply(
-        `✅ Channel ထည့်ပြီး!\n\n` +
-          `📖 ဇာတ်ကား: *${manhwaTitle}*\n` +
-          `🆔 Channel ID: \`${channelId}\`\n` +
-          `💰 ဈေးနှုန်း: ${price} ကျပ်`,
-        { parse_mode: "Markdown" }
+      await safeReply(
+        ctx,
+        `✅ Channel ချိတ်ဆက်ပြီး!\n` +
+          `📛 Channel: ${channelName || channelId}\n\n` +
+          `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:\n_(ဥပမာ: Solo Leveling)_`,
+        { parse_mode: "Markdown", ...getCancelKeyboard() }
       );
-    } else if (state.action === "removing_channel") {
-      const removed = await removeChannel(text.trim());
+      return;
+    }
+
+    if (state.action === "add_step_title") {
+      updateUserState(userId, { action: "add_step_price", draftManhwaTitle: text.trim() });
+      await safeReply(
+        ctx,
+        `✅ ဇာတ်ကားအမည်: *${text.trim()}*\n\n💰 *Step 3/5: ဈေးနှုန်း*\n\nဈေးနှုန်း (ကျပ်) ရိုက်ပါ:\n_(ဥပမာ: 3000)_`,
+        { parse_mode: "Markdown", ...getCancelKeyboard() }
+      );
+      return;
+    }
+
+    if (state.action === "add_step_price") {
+      const price = parseInt(text.trim().replace(/,/g, ""), 10);
+      if (isNaN(price) || price < 0) {
+        await safeReply(ctx, "❌ မှန်ကန်သော ဂဏန်း ရိုက်ပါ (ဥပမာ: 3000):", getCancelKeyboard());
+        return;
+      }
+      updateUserState(userId, { action: "add_step_cover", draftPrice: price });
+      await safeReply(
+        ctx,
+        `✅ ဈေးနှုန်း: *${price.toLocaleString()} ကျပ်*\n\n🖼️ *Step 4/5: Cover Photo*\n\nCover Photo ပို့ပါ\n(သို့မဟုတ် Skip နှိပ်ပါ)`,
+        { parse_mode: "Markdown", ...getSkipCancelKeyboard("skip_cover") }
+      );
+      return;
+    }
+
+    if (state.action === "add_step_description") {
+      updateUserState(userId, { draftDescription: text.trim() });
+      await showAddManhwaSummary(ctx);
+      return;
+    }
+
+    // ===== Edit existing Manhwa =====
+    if (state.action === "edit_title" && state.editChannelId) {
+      const channelDbId = parseInt(state.editChannelId, 10);
+      await updateChannel(channelDbId, { manhwa_title: text.trim() });
       clearUserState(userId);
-      await ctx.reply(removed ? "✅ Channel ဖျက်ပြီး!" : "❌ Channel မတွေ့ပါ။");
-    } else if (state.action === "setting_welcome_caption") {
+      await safeReply(ctx, "✅ ဇာတ်ကားအမည် ပြောင်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+      ]));
+      return;
+    }
+
+    if (state.action === "edit_price" && state.editChannelId) {
+      const price = parseInt(text.trim().replace(/,/g, ""), 10);
+      if (isNaN(price) || price < 0) {
+        await safeReply(ctx, "❌ မှန်ကန်သော ဂဏန်း ရိုက်ပါ:", getCancelKeyboard());
+        return;
+      }
+      const channelDbId = parseInt(state.editChannelId, 10);
+      await updateChannel(channelDbId, { price });
+      clearUserState(userId);
+      await safeReply(ctx, "✅ ဈေးနှုန်း ပြောင်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+      ]));
+      return;
+    }
+
+    if (state.action === "edit_desc" && state.editChannelId) {
+      const channelDbId = parseInt(state.editChannelId, 10);
+      await updateChannel(channelDbId, { description: text.trim() });
+      clearUserState(userId);
+      await safeReply(ctx, "✅ ဖော်ပြချက် ပြောင်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+      ]));
+      return;
+    }
+
+    // ===== Welcome Caption =====
+    if (state.action === "set_welcome_caption") {
       await setBotSetting("welcome_caption", text);
       clearUserState(userId);
-      await ctx.reply("✅ Welcome Caption ပြောင်းပြီး!");
-    }
-  });
-
-  // Admin commands
-  bot.command("addchannel", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    setUserState(ctx.from.id, { action: "adding_channel_step1" });
-    await ctx.reply(
-      `📋 *Channel ထည့်ရန်*\n\n` +
-        `ဦးစွာ Channel ID ပေးပို့ပါ\n` +
-        `(ဥပမာ: -1001234567890)\n\n` +
-        `Channel ID ရှာနည်း:\n` +
-        `Bot ကို Channel ထဲ Admin အဖြစ် ထည့်ပြီး @userinfobot ကို message forward လုပ်ပါ`,
-      { parse_mode: "Markdown" }
-    );
-  });
-
-  bot.command("setcover", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    const args = ctx.message.text.split(" ").slice(1);
-    if (args.length < 2) {
-      await ctx.reply(
-        "Usage: /setcover <channel_id> <photo_url>\n\nExample: /setcover -1001234567890 https://example.com/cover.jpg"
-      );
+      await safeReply(ctx, "✅ Welcome Caption သိမ်းပြီး!", Markup.inlineKeyboard([
+        [Markup.button.callback("🔙 Welcome Settings", "admin_welcome")],
+      ]));
       return;
     }
-    const [channelId, photoUrl] = args;
-    const { pool: dbPool } = await import("@workspace/db");
-    await (dbPool as unknown as { query: (sql: string, params: unknown[]) => Promise<void> }).query(
-      "UPDATE channels SET cover_photo_url = $1 WHERE channel_id = $2",
-      [photoUrl, channelId]
-    );
-    await ctx.reply(`✅ Cover photo သတ်မှတ်ပြီး!\nChannel: ${channelId}`);
-  });
 
-  bot.command("setreview", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    const args = ctx.message.text.split(" ").slice(1);
-    if (args.length < 2) {
-      await ctx.reply(
-        "Usage: /setreview <channel_id> <photo_url>\n\nExample: /setreview -1001234567890 https://example.com/review.jpg"
-      );
-      return;
-    }
-    const [channelId, photoUrl] = args;
-    const { pool: dbPool } = await import("@workspace/db");
-    await (dbPool as unknown as { query: (sql: string, params: unknown[]) => Promise<void> }).query(
-      "UPDATE channels SET review_photo_url = $1 WHERE channel_id = $2",
-      [photoUrl, channelId]
-    );
-    await ctx.reply(`✅ Review photo သတ်မှတ်ပြီး!\nChannel: ${channelId}`);
-  });
-
-  bot.command("removechannel", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    setUserState(ctx.from.id, { action: "removing_channel" });
-    await ctx.reply("ဖျက်မည့် Channel ID ကို ပေးပို့ပါ:");
-  });
-
-  bot.command("listchannels", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    const channels = await getAllActiveChannels();
-    if (channels.length === 0) {
-      await ctx.reply("Channel များ မရှိသေးပါ။");
-      return;
-    }
-    const text = channels
-      .map(
-        (ch, i) =>
-          `${i + 1}. *${ch.manhwa_title}*\n   ID: \`${ch.channel_id}\`\n   ဈေးနှုန်း: ${ch.price} ကျပ်`
-      )
-      .join("\n\n");
-    await ctx.reply(`📋 *Channel စာရင်း*\n\n${text}`, { parse_mode: "Markdown" });
-  });
-
-  bot.command("setwelcome", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    setUserState(ctx.from.id, { action: "setting_welcome_photo" });
-    await ctx.reply(
-      "Welcome Photo ကို ပေးပို့ပါ:\n\n(Photo မလိုပါက /skip ရိုက်ပါ)"
-    );
-  });
-
-  bot.command("skip", async (ctx) => {
-    const userId = ctx.from.id;
-    const state = getUserState(userId);
-    if (isOwner(userId) && state.action === "setting_welcome_photo") {
-      setUserState(userId, { action: "setting_welcome_caption" });
-      await ctx.reply("Welcome Caption ရိုက်ပါ:");
-    } else if (isOwner(userId) && state.action === "adding_channel_step4") {
-      // Skip description
-      const channelId = state.selectedChannelId!;
-      const manhwaTitle = state.selectedManhwa!;
-      const price = state.purchaseId!;
-
-      let channelName = manhwaTitle;
-      try {
-        const chat = await bot.telegram.getChat(parseInt(channelId, 10));
-        if ("title" in chat) channelName = chat.title;
-      } catch {
-        channelName = manhwaTitle;
+    // ===== Main Channel: Step 1 = link =====
+    if (state.action === "set_main_link") {
+      const link = text.trim();
+      if (!link.startsWith("http") && !link.startsWith("@")) {
+        await safeReply(
+          ctx,
+          "❌ မှန်ကန်သော Link ပို့ပါ (ဥပမာ: https://t.me/yourchannel)",
+          getCancelKeyboard()
+        );
+        return;
       }
-
-      await addChannel({
-        channel_id: channelId,
-        channel_name: channelName,
-        manhwa_title: manhwaTitle,
-        price,
-      });
-
-      clearUserState(userId);
-      await ctx.reply(
-        `✅ Channel ထည့်ပြီး!\n\n` +
-          `📖 ဇာတ်ကား: *${manhwaTitle}*\n` +
-          `🆔 Channel ID: \`${channelId}\`\n` +
-          `💰 ဈေးနှုန်း: ${price} ကျပ်`,
-        { parse_mode: "Markdown" }
-      );
-    }
-  });
-
-  bot.command("setmainchannel", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    const args = ctx.message.text.split(" ").slice(1);
-    if (args.length < 2) {
-      await ctx.reply(
-        "Usage: /setmainchannel <link> <name>\nExample: /setmainchannel https://t.me/mychannel MyChannel"
+      updateUserState(userId, { action: "set_main_name", mainChannelLink: link });
+      await safeReply(
+        ctx,
+        `✅ Link: ${link}\n\n📛 Main Channel ၏ Display Name ရိုက်ပါ:`,
+        getCancelKeyboard()
       );
       return;
     }
-    const link = args[0];
-    const name = args.slice(1).join(" ");
-    await setBotSetting("main_channel_link", link);
-    await setBotSetting("main_channel_name", name);
-    await ctx.reply(`✅ Main Channel သတ်မှတ်ပြီး!\nLink: ${link}\nName: ${name}`);
+
+    if (state.action === "set_main_name") {
+      const name = text.trim();
+      const link = state.mainChannelLink;
+      if (!link) {
+        await safeReply(ctx, "❌ Link မရှိပါ။ ပြန်စပါ။");
+        clearUserState(userId);
+        return;
+      }
+      await setBotSetting("main_channel_link", link);
+      await setBotSetting("main_channel_name", name);
+      clearUserState(userId);
+      await safeReply(
+        ctx,
+        `✅ Main Channel သတ်မှတ်ပြီး!\n🔗 ${link}\n📛 ${name}`,
+        Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]])
+      );
+      return;
+    }
   });
 
-  bot.command("adminhelp", async (ctx) => {
-    if (!isOwner(ctx.from.id)) return;
-    await ctx.reply(
-      `🔧 *Admin Commands*\n\n` +
-        `/addchannel - Manhwa Channel ထည့်ရန်\n` +
-        `/removechannel - Channel ဖျက်ရန်\n` +
-        `/listchannels - Channel စာရင်းကြည့်ရန်\n` +
-        `/setwelcome - Welcome Photo/Caption ပြောင်းရန်\n` +
-        `/setmainchannel <link> <name> - Main Channel Link သတ်မှတ်ရန်\n` +
-        `/setcover <channel_id> <photo_url> - Cover Photo URL သတ်မှတ်ရန်\n` +
-        `/setreview <channel_id> <photo_url> - Review Photo URL သတ်မှတ်ရန်`,
-      { parse_mode: "Markdown" }
+  // ===== Handle forwarded message at "add channel" step (when user just forwards w/o text) =====
+  // Telegraf groups forwards as messages too. The text handler above checks forward_from_chat
+  // but if forwarded message is media without text, we handle it here.
+  bot.on("message", async (ctx, next) => {
+    const userId = ctx.from?.id;
+    if (!userId || !isOwner(userId)) return next();
+
+    const state = getUserState(userId);
+    if (state.action !== "add_step_channel") return next();
+
+    const msg = ctx.message as any;
+    if (!msg.forward_from_chat) return next();
+
+    const channelId = String(msg.forward_from_chat.id);
+    const channelName = msg.forward_from_chat.title || null;
+
+    updateUserState(userId, {
+      action: "add_step_title",
+      draftChannelId: channelId,
+      draftChannelName: channelName || undefined,
+    });
+
+    await safeReply(
+      ctx,
+      `✅ Channel ချိတ်ဆက်ပြီး!\n` +
+        `📛 Channel: ${channelName || channelId}\n` +
+        `🆔 ID: \`${channelId}\`\n\n` +
+        `📖 *Step 2/5: Manhwa အမည်*\n\nManhwa ဇာတ်ကား အမည် ရိုက်ပါ:`,
+      { parse_mode: "Markdown", ...getCancelKeyboard() }
     );
   });
 }
