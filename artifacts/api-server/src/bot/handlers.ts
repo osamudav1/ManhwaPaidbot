@@ -35,6 +35,11 @@ import {
   getSkipCancelKeyboard,
   getAddManhwaConfirmKeyboard,
   copyButton,
+  primaryCallback,
+  successCallback,
+  dangerCallback,
+  primaryUrl,
+  successUrl,
 } from "./keyboards.js";
 import { getUserState, setUserState, updateUserState, clearUserState } from "./states.js";
 import { logger } from "../lib/logger.js";
@@ -247,10 +252,10 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [
-            Markup.button.callback("📚 ဇာတ်ကားစာရင်း", "back_to_list"),
-            Markup.button.callback("🏠 ပင်မ", "back_to_start"),
+            primaryCallback("📚 ဇာတ်ကားစာရင်း", "back_to_list"),
+            primaryCallback("🏠 ပင်မ", "back_to_start"),
           ],
         ]),
       }
@@ -294,8 +299,8 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
-          [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
+          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
         ]),
       }
     );
@@ -316,8 +321,8 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.callback("🔙 ငွေပေးနည်း ရွေးရန်", `buy_${channelDbId}`)],
-          [Markup.button.url("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [primaryCallback("🔙 ငွေပေးနည်း ရွေးရန်", `buy_${channelDbId}`)],
+          [successUrl("📞 Owner ကို ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
         ]),
       }
     );
@@ -432,8 +437,8 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
-          [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
+          [successUrl("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
     );
@@ -479,8 +484,8 @@ export function registerHandlers(bot: Telegraf) {
             copyButton("📋 ဖုန်းနံပါတ် Copy", KPAY_PHONE),
             copyButton("📋 အမည် Copy", KPAY_NAME),
           ],
-          [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
-          [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
+          [successUrl("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
+          [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
       }
     );
@@ -528,7 +533,7 @@ export function registerHandlers(bot: Telegraf) {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📞 Owner ကို ဆက်သွယ်ရန်", url: `tg://user?id=${OWNER_ID}` }],
+            [{ text: "📞 Owner ကို ဆက်သွယ်ရန်", url: `tg://user?id=${OWNER_ID}`, style: "success" } as any],
           ],
         },
       });
@@ -675,8 +680,8 @@ export function registerHandlers(bot: Telegraf) {
           {
             parse_mode: "Markdown",
             ...Markup.inlineKeyboard([
-              [Markup.button.callback("➕ Manhwa ထည့်ရန်", "admin_add_manhwa")],
-              [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+              [successCallback("➕ Manhwa ထည့်ရန်", "admin_add_manhwa")],
+              [primaryCallback("🔙 Admin Panel", "admin_panel")],
             ]),
           }
         );
@@ -797,7 +802,7 @@ export function registerHandlers(bot: Telegraf) {
         {
           parse_mode: "Markdown",
           ...Markup.inlineKeyboard([
-            [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+            [primaryCallback("🔙 Admin Panel", "admin_panel")],
           ]),
         }
       );
@@ -905,7 +910,7 @@ export function registerHandlers(bot: Telegraf) {
     await deleteBotSetting("main_channel_link");
     await deleteBotSetting("main_channel_name");
     await safeReply(ctx, "✅ Main Channel ဖယ်ရှားပြီးပါပြီ။", Markup.inlineKeyboard([
-      [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+      [primaryCallback("🔙 Admin Panel", "admin_panel")],
     ]));
   });
 
@@ -918,7 +923,7 @@ export function registerHandlers(bot: Telegraf) {
       try {
         await ctx.editMessageText("📊 *Purchase Records*\n\nMagic မရှိသေးပါ။", {
           parse_mode: "Markdown",
-          ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]]),
+          ...Markup.inlineKeyboard([[primaryCallback("🔙 Admin Panel", "admin_panel")]]),
         });
       } catch {
         await safeReply(ctx, "Purchase မရှိသေးပါ။");
@@ -934,7 +939,7 @@ export function registerHandlers(bot: Telegraf) {
     try {
       await ctx.editMessageText(text, {
         parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]]),
+        ...Markup.inlineKeyboard([[primaryCallback("🔙 Admin Panel", "admin_panel")]]),
       });
     } catch {
       await safeReply(ctx, text, { parse_mode: "Markdown" });
@@ -966,8 +971,8 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
-          [Markup.button.callback("➕ နောက်တစ်ခုထည့်ရန်", "admin_add_manhwa")],
-          [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+          [successCallback("➕ နောက်တစ်ခုထည့်ရန်", "admin_add_manhwa")],
+          [primaryCallback("🔙 Admin Panel", "admin_panel")],
         ]),
       }
     );
@@ -1052,7 +1057,7 @@ export function registerHandlers(bot: Telegraf) {
       await setBotSetting("welcome_photo_url", fileId);
       clearUserState(userId);
       await safeReply(ctx, "✅ Welcome Photo သိမ်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Welcome Settings", "admin_welcome")],
+        [primaryCallback("🔙 Welcome Settings", "admin_welcome")],
       ]));
       return;
     }
@@ -1085,7 +1090,7 @@ export function registerHandlers(bot: Telegraf) {
       await updateChannel(channelDbId, { cover_photo_url: fileId });
       clearUserState(userId);
       await safeReply(ctx, "✅ Cover Photo ပြောင်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+        [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
     }
@@ -1096,7 +1101,7 @@ export function registerHandlers(bot: Telegraf) {
       await updateChannel(channelDbId, { review_photo_url: fileId });
       clearUserState(userId);
       await safeReply(ctx, "✅ Review Photo ပြောင်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+        [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
     }
@@ -1258,7 +1263,7 @@ export function registerHandlers(bot: Telegraf) {
       await updateChannel(channelDbId, { manhwa_title: text.trim() });
       clearUserState(userId);
       await safeReply(ctx, "✅ ဇာတ်ကားအမည် ပြောင်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+        [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
     }
@@ -1273,7 +1278,7 @@ export function registerHandlers(bot: Telegraf) {
       await updateChannel(channelDbId, { price });
       clearUserState(userId);
       await safeReply(ctx, "✅ ဈေးနှုန်း ပြောင်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+        [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
     }
@@ -1283,7 +1288,7 @@ export function registerHandlers(bot: Telegraf) {
       await updateChannel(channelDbId, { description: text.trim() });
       clearUserState(userId);
       await safeReply(ctx, "✅ ဖော်ပြချက် ပြောင်းပြီး!", Markup.inlineKeyboard([
-        [Markup.button.callback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
+        [primaryCallback("🔙 Manhwa Edit", `admin_edit_${channelDbId}`)],
       ]));
       return;
     }
@@ -1299,8 +1304,8 @@ export function registerHandlers(bot: Telegraf) {
       }
       clearUserState(userId);
       await safeReply(ctx, "✅ Welcome Caption သိမ်းပြီး! (formatting ပါ ထိန်းထားသည်)", Markup.inlineKeyboard([
-        [Markup.button.callback("👁️ Preview", "preview_welcome")],
-        [Markup.button.callback("🔙 Welcome Settings", "admin_welcome")],
+        [primaryCallback("👁️ Preview", "preview_welcome")],
+        [primaryCallback("🔙 Welcome Settings", "admin_welcome")],
       ]));
       return;
     }
@@ -1339,7 +1344,7 @@ export function registerHandlers(bot: Telegraf) {
       await safeReply(
         ctx,
         `✅ Main Channel သတ်မှတ်ပြီး!\n🔗 ${link}\n📛 ${name}`,
-        Markup.inlineKeyboard([[Markup.button.callback("🔙 Admin Panel", "admin_panel")]])
+        Markup.inlineKeyboard([[primaryCallback("🔙 Admin Panel", "admin_panel")]])
       );
       return;
     }

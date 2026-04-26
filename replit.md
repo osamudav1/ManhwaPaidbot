@@ -55,4 +55,20 @@ pnpm workspace monorepo using TypeScript. Contains a Telegram Manhwa Bot (Burmes
 - `pnpm run build` — build all packages
 - `pnpm --filter @workspace/api-server run dev` — run API/Bot server locally
 
+## Bot Features
+
+- **Edit-in-place navigation** — `editOrReply` / `editOrReplyPhoto` helpers swap message content (caption/media/text) instead of sending new messages, keeping the chat clean. Handles "message is not modified" errors silently.
+- **Colored buttons (Bot API 9.5)** — Helpers `primaryCallback`, `successCallback`, `dangerCallback`, `primaryUrl`, `successUrl` in `keyboards.ts` add the `style` field (`primary` blue / `success` green / `danger` red) to inline buttons. The `style` field is at the top level of each button object — Telegraf 4.16.3 forwards unknown fields unchanged.
+- **Copy buttons (Bot API 8.0)** — `copyButton(label, value)` produces a `copy_text` inline button that one-tap-copies the value to the user's clipboard (used for KPay phone & name).
+- **Welcome caption entities** — Telegram message entities (bold, italic, custom emoji, links, etc.) captured from owner's message are stored as JSON in `bot_settings.welcome_caption_entities` and reapplied on render.
+- **Auto-revoke 1-time invite link** — `chat_member` updates trigger `revokeChatInviteLink` once a user joins via their issued link.
+
+## Bot Setup Requirements
+
+- `TELEGRAM_BOT_TOKEN` — BotFather token (secret)
+- `OWNER_TELEGRAM_ID` — Owner's Telegram user ID (secret)
+- `KPAY_PHONE` — KPay phone number (secret)
+- `KPAY_NAME` — KPay account name (secret)
+- Bot must be added as **Admin** to each Manhwa channel with **Invite Users via Link** permission
+
 See the `pnpm-workspace` skill for workspace structure and TypeScript setup.

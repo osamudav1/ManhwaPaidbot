@@ -1,8 +1,30 @@
 import { Markup } from "telegraf";
 import type { Channel } from "./db.js";
 
+export type ButtonStyle = "primary" | "success" | "danger";
+
+function withStyle<T extends object>(btn: T, style: ButtonStyle): T {
+  return Object.assign({}, btn, { style }) as T;
+}
+
+export function successCallback(text: string, data: string) {
+  return withStyle(Markup.button.callback(text, data), "success");
+}
+export function dangerCallback(text: string, data: string) {
+  return withStyle(Markup.button.callback(text, data), "danger");
+}
+export function primaryCallback(text: string, data: string) {
+  return withStyle(Markup.button.callback(text, data), "primary");
+}
+export function primaryUrl(text: string, url: string) {
+  return withStyle(Markup.button.url(text, url), "primary");
+}
+export function successUrl(text: string, url: string) {
+  return withStyle(Markup.button.url(text, url), "success");
+}
+
 export function copyButton(text: string, value: string) {
-  return { text, copy_text: { text: value } } as any;
+  return { text, copy_text: { text: value }, style: "primary" } as any;
 }
 
 export function getStartKeyboard(
@@ -15,89 +37,96 @@ export function getStartKeyboard(
   const buttons: any[][] = [];
 
   if (mainChannelLink) {
-    buttons.push([Markup.button.url(`📢 ${mainChannelName}`, mainChannelLink)]);
+    buttons.push([primaryUrl(`📢 ${mainChannelName}`, mainChannelLink)]);
   }
 
   buttons.push([
-    Markup.button.callback("✅ အကူအညီ", "help"),
-    Markup.button.url("🟢 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
+    primaryCallback("✅ အကူအညီ", "help"),
+    successUrl("🟢 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
   ]);
 
   buttons.push([
-    Markup.button.callback("📚 ဇာတ်ကားများ", "show_manhwa_list"),
-    Markup.button.callback("⭐ အကြောင်း", "about_bot"),
+    primaryCallback("📚 ဇာတ်ကားများ", "show_manhwa_list"),
+    primaryCallback("⭐ အကြောင်း", "about_bot"),
   ]);
 
   if (botUsername) {
     buttons.push([
-      Markup.button.url("📤 မိတ်ဆွေကို မျှဝေရန်", `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent("Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇")}`),
+      primaryUrl(
+        "📤 မိတ်ဆွေကို မျှဝေရန်",
+        `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent(
+          "Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇"
+        )}`
+      ),
     ]);
   }
 
   if (isOwner) {
-    buttons.push([Markup.button.callback("🔧 Admin Panel", "admin_panel")]);
+    buttons.push([successCallback("🔧 Admin Panel", "admin_panel")]);
   }
 
   return Markup.inlineKeyboard(buttons);
 }
 
 export function getManhwaListKeyboard(channels: Channel[]) {
-  const buttons = channels.map((ch) => [
-    Markup.button.callback(`📖 ${ch.manhwa_title}`, `manhwa_${ch.id}`),
+  const buttons: any[][] = channels.map((ch) => [
+    primaryCallback(`📖 ${ch.manhwa_title}`, `manhwa_${ch.id}`),
   ]);
-  buttons.push([Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")]);
+  buttons.push([primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")]);
   return Markup.inlineKeyboard(buttons);
 }
 
 export function getManhwaDetailKeyboard(channelDbId: number, botUsername?: string | null) {
   const buttons: any[][] = [
-    [Markup.button.callback("✅ ဝယ်ယူရန်", `buy_${channelDbId}`)],
+    [successCallback("✅ ဝယ်ယူရန်", `buy_${channelDbId}`)],
   ];
   if (botUsername) {
     buttons.push([
-      Markup.button.url(
+      primaryUrl(
         "📤 မိတ်ဆွေကို မျှဝေရန်",
-        `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent("Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇")}`
+        `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent(
+          "Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇"
+        )}`
       ),
     ]);
   }
   buttons.push([
-    Markup.button.callback("🔙 နောက်သို့", "back_to_list"),
-    Markup.button.callback("🏠 ပင်မ", "back_to_start"),
+    primaryCallback("🔙 နောက်သို့", "back_to_list"),
+    primaryCallback("🏠 ပင်မ", "back_to_start"),
   ]);
   return Markup.inlineKeyboard(buttons);
 }
 
 export function getPaymentKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("💳 Wave Pay", `pay_wave_${channelDbId}`)],
-    [Markup.button.callback("💎 KPay", `pay_kpay_${channelDbId}`)],
-    [Markup.button.callback("ℹ️ ငွေပေးနည်း ကြည့်ရန်", `pay_help_${channelDbId}`)],
-    [Markup.button.callback("🔙 နောက်သို့", `manhwa_${channelDbId}`)],
+    [successCallback("💳 Wave Pay", `pay_wave_${channelDbId}`)],
+    [successCallback("💎 KPay", `pay_kpay_${channelDbId}`)],
+    [primaryCallback("ℹ️ ငွေပေးနည်း ကြည့်ရန်", `pay_help_${channelDbId}`)],
+    [primaryCallback("🔙 နောက်သို့", `manhwa_${channelDbId}`)],
   ]);
 }
 
 export function getAfterPaymentKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
-    [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
+    [primaryCallback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
+    [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
   ]);
 }
 
 export function getOwnerConfirmKeyboard(purchaseId: number) {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback("✅ Confirmed", `confirm_${purchaseId}`),
-      Markup.button.callback("❌ Cancel", `cancel_${purchaseId}`),
+      successCallback("✅ Confirmed", `confirm_${purchaseId}`),
+      dangerCallback("❌ Cancel", `cancel_${purchaseId}`),
     ],
-    [Markup.button.callback("📊 Purchase Records", "admin_purchases")],
+    [primaryCallback("📊 Purchase Records", "admin_purchases")],
   ]);
 }
 
 export function getBackToListKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("📚 ဇာတ်ကားစာရင်းသို့", "back_to_list")],
-    [Markup.button.callback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
+    [primaryCallback("📚 ဇာတ်ကားစာရင်းသို့", "back_to_list")],
+    [primaryCallback("🏠 ပင်မ စာမျက်နှာ", "back_to_start")],
   ]);
 }
 
@@ -105,84 +134,81 @@ export function getBackToListKeyboard() {
 
 export function getAdminPanelKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("➕ Manhwa အသစ်ထည့်ရန်", "admin_add_manhwa")],
-    [Markup.button.callback("📋 Manhwa စီမံခန့်ခွဲရန်", "admin_manage_manhwa")],
-    [Markup.button.callback("🎨 Welcome Settings", "admin_welcome")],
-    [Markup.button.callback("📢 Main Channel", "admin_mainchannel")],
-    [Markup.button.callback("📊 Purchase Records", "admin_purchases")],
-    [Markup.button.callback("❌ ပိတ်ရန်", "admin_close")],
+    [successCallback("➕ Manhwa အသစ်ထည့်ရန်", "admin_add_manhwa")],
+    [primaryCallback("📋 Manhwa စီမံခန့်ခွဲရန်", "admin_manage_manhwa")],
+    [primaryCallback("🎨 Welcome Settings", "admin_welcome")],
+    [primaryCallback("📢 Main Channel", "admin_mainchannel")],
+    [primaryCallback("📊 Purchase Records", "admin_purchases")],
+    [dangerCallback("❌ ပိတ်ရန်", "admin_close")],
   ]);
 }
 
 export function getCancelKeyboard(returnTo: string = "admin_panel") {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("❌ Cancel", `cancel_action_${returnTo}`)],
+    [dangerCallback("❌ Cancel", `cancel_action_${returnTo}`)],
   ]);
 }
 
 export function getSkipCancelKeyboard(skipAction: string) {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback("⏭️ Skip", skipAction),
-      Markup.button.callback("❌ Cancel", "cancel_action_admin_panel"),
+      primaryCallback("⏭️ Skip", skipAction),
+      dangerCallback("❌ Cancel", "cancel_action_admin_panel"),
     ],
   ]);
 }
 
 export function getAdminManhwaListKeyboard(channels: Channel[]) {
-  const buttons = channels.map((ch) => [
-    Markup.button.callback(
-      `📖 ${ch.manhwa_title} (${ch.price} Ks)`,
-      `admin_edit_${ch.id}`
-    ),
+  const buttons: any[][] = channels.map((ch) => [
+    primaryCallback(`📖 ${ch.manhwa_title} (${ch.price} Ks)`, `admin_edit_${ch.id}`),
   ]);
-  buttons.push([Markup.button.callback("🔙 Admin Panel", "admin_panel")]);
+  buttons.push([primaryCallback("🔙 Admin Panel", "admin_panel")]);
   return Markup.inlineKeyboard(buttons);
 }
 
 export function getAdminEditManhwaKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("✏️ ဇာတ်ကားအမည် ပြောင်းရန်", `edit_title_${channelDbId}`)],
-    [Markup.button.callback("💰 ဈေးနှုန်း ပြောင်းရန်", `edit_price_${channelDbId}`)],
-    [Markup.button.callback("🖼️ Cover Photo ပြောင်းရန်", `edit_cover_${channelDbId}`)],
-    [Markup.button.callback("📸 Review Photo ပြောင်းရန်", `edit_review_${channelDbId}`)],
-    [Markup.button.callback("📝 ဖော်ပြချက် ပြောင်းရန်", `edit_desc_${channelDbId}`)],
-    [Markup.button.callback("🗑️ ဖျက်ရန်", `delete_manhwa_${channelDbId}`)],
-    [Markup.button.callback("🔙 Manhwa List", "admin_manage_manhwa")],
+    [primaryCallback("✏️ ဇာတ်ကားအမည် ပြောင်းရန်", `edit_title_${channelDbId}`)],
+    [primaryCallback("💰 ဈေးနှုန်း ပြောင်းရန်", `edit_price_${channelDbId}`)],
+    [primaryCallback("🖼️ Cover Photo ပြောင်းရန်", `edit_cover_${channelDbId}`)],
+    [primaryCallback("📸 Review Photo ပြောင်းရန်", `edit_review_${channelDbId}`)],
+    [primaryCallback("📝 ဖော်ပြချက် ပြောင်းရန်", `edit_desc_${channelDbId}`)],
+    [dangerCallback("🗑️ ဖျက်ရန်", `delete_manhwa_${channelDbId}`)],
+    [primaryCallback("🔙 Manhwa List", "admin_manage_manhwa")],
   ]);
 }
 
 export function getDeleteConfirmKeyboard(channelDbId: number) {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback("✅ ဖျက်မည်", `delete_confirm_${channelDbId}`),
-      Markup.button.callback("❌ မဖျက်ပါ", `admin_edit_${channelDbId}`),
+      dangerCallback("✅ ဖျက်မည်", `delete_confirm_${channelDbId}`),
+      successCallback("❌ မဖျက်ပါ", `admin_edit_${channelDbId}`),
     ],
   ]);
 }
 
 export function getWelcomeSettingsKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("🖼️ Welcome Photo သတ်မှတ်ရန်", "set_welcome_photo")],
-    [Markup.button.callback("📝 Welcome Caption ပြောင်းရန်", "set_welcome_caption")],
-    [Markup.button.callback("👁️ Preview ကြည့်ရန်", "preview_welcome")],
-    [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+    [primaryCallback("🖼️ Welcome Photo သတ်မှတ်ရန်", "set_welcome_photo")],
+    [primaryCallback("📝 Welcome Caption ပြောင်းရန်", "set_welcome_caption")],
+    [primaryCallback("👁️ Preview ကြည့်ရန်", "preview_welcome")],
+    [primaryCallback("🔙 Admin Panel", "admin_panel")],
   ]);
 }
 
 export function getMainChannelSettingsKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("🔗 Channel Link သတ်မှတ်ရန်", "set_main_link")],
-    [Markup.button.callback("🗑️ Main Channel ဖယ်ရှားရန်", "remove_main_channel")],
-    [Markup.button.callback("🔙 Admin Panel", "admin_panel")],
+    [primaryCallback("🔗 Channel Link သတ်မှတ်ရန်", "set_main_link")],
+    [dangerCallback("🗑️ Main Channel ဖယ်ရှားရန်", "remove_main_channel")],
+    [primaryCallback("🔙 Admin Panel", "admin_panel")],
   ]);
 }
 
 export function getAddManhwaConfirmKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback("✅ သိမ်းမည်", "confirm_add_manhwa"),
-      Markup.button.callback("❌ Cancel", "cancel_action_admin_panel"),
+      successCallback("✅ သိမ်းမည်", "confirm_add_manhwa"),
+      dangerCallback("❌ Cancel", "cancel_action_admin_panel"),
     ],
   ]);
 }
