@@ -207,19 +207,6 @@ async function showStartScreen(ctx: any) {
   } else {
     await safeReply(ctx, caption, { ...(entities ? { entities } : {}), ...keyboard });
   }
-
-  if (channels.length > 0) {
-    await safeReply(
-      ctx,
-      "🌷 <blockquote>ကြိုက်နှစ်သက်သော Manhwaကို ရွေးပါ</blockquote>",
-      { parse_mode: "HTML", ...getManhwaListKeyboard(channels) }
-    );
-  } else {
-    await safeReply(
-      ctx,
-      "Manhwaများ မရှိသေးပါ။ မကြာမီ ထည့်သွင်းပါမည် 🌸"
-    );
-  }
 }
 
 async function showAdminPanel(ctx: any) {
@@ -869,7 +856,7 @@ export function registerHandlers(bot: Telegraf) {
     await editOrReply(
       ctx,
       `💳 <b>Wave Pay ဖြင့် ငွေပေးချေရန်</b>\n` +
-        `<blockquote>` +
+        `<blockquote expandable>` +
         `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
         `📱 Wave Pay ဖုန်းနံပါတ်ရယူရန် Owner ကို ဆက်သွယ်ပါ 👇\n` +
@@ -911,7 +898,7 @@ export function registerHandlers(bot: Telegraf) {
     await editOrReply(
       ctx,
       `💎 <b>KPay ဖြင့် ငွေပေးချေရန်</b>\n` +
-        `<blockquote>` +
+        `<blockquote expandable>` +
         `📖 Manhwa: <b>${escHtml(channel.manhwa_title)}</b>\n` +
         `💰 ငွေပမာဏ: <b>${channel.price.toLocaleString()} ကျပ်</b>\n` +
         `📱 KPay နံပါတ်: <code>${escHtml(KPAY_PHONE)}</code>\n` +
