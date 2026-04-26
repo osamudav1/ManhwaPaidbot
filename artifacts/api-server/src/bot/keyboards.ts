@@ -41,19 +41,19 @@ export function getStartKeyboard(
   }
 
   buttons.push([
-    primaryCallback("🌸 အကူအညီ", "help"),
-    successUrl("💌 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
+    primaryCallback("📖 အကူအညီ", "help"),
+    successUrl("💬 ဆက်သွယ်ရန်", `tg://user?id=${ownerId}`),
   ]);
 
   buttons.push([
-    primaryCallback("🌷 ဇာတ်ကားများ", "show_manhwa_list"),
-    primaryCallback("🎀 အကြောင်း", "about_bot"),
+    primaryCallback("📚 ဇာတ်ကားများ", "show_manhwa_list"),
+    primaryCallback("⭐ အကြောင်း", "about_bot"),
   ]);
 
   if (botUsername) {
     buttons.push([
       primaryUrl(
-        "💝 မိတ်ဆွေကို မျှဝေရန်",
+        "📤 မိတ်ဆွေကို မျှဝေရန်",
         `https://t.me/share/url?url=https://t.me/${botUsername}&text=${encodeURIComponent(
           "Manhwa ဝယ်ယူရန် ဤ Bot ကို စမ်းကြည့်ပါ 👇"
         )}`
