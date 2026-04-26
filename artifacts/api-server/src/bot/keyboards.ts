@@ -1,6 +1,10 @@
 import { Markup } from "telegraf";
 import type { Channel } from "./db.js";
 
+export function copyButton(text: string, value: string) {
+  return { text, copy_text: { text: value } } as any;
+}
+
 export function getStartKeyboard(
   mainChannelLink: string | null,
   mainChannelName: string,

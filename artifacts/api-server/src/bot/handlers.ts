@@ -34,6 +34,7 @@ import {
   getCancelKeyboard,
   getSkipCancelKeyboard,
   getAddManhwaConfirmKeyboard,
+  copyButton,
 } from "./keyboards.js";
 import { getUserState, setUserState, updateUserState, clearUserState } from "./states.js";
 import { logger } from "../lib/logger.js";
@@ -63,6 +64,11 @@ async function safeReply(ctx: any, text: string, extra?: any) {
 // Edit current message in place when possible, fallback to sending a new one.
 // Auto-detects whether the prior message has media (use editMessageCaption)
 // or is text (use editMessageText). Avoids cluttering chat with new bubbles.
+function isNotModifiedError(err: any): boolean {
+  const desc = String(err?.description || err?.message || "");
+  return desc.includes("message is not modified");
+}
+
 async function editOrReply(ctx: any, text: string, extra?: any) {
   const msg = ctx.callbackQuery?.message as any;
   if (msg) {
@@ -74,7 +80,8 @@ async function editOrReply(ctx: any, text: string, extra?: any) {
         await ctx.editMessageText(text, extra);
       }
       return;
-    } catch {
+    } catch (err) {
+      if (isNotModifiedError(err)) return;
       // fall through to safeReply
     }
   }
@@ -468,6 +475,10 @@ export function registerHandlers(bot: Telegraf) {
       {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
+          [
+            copyButton("📋 ဖုန်းနံပါတ် Copy", KPAY_PHONE),
+            copyButton("📋 အမည် Copy", KPAY_NAME),
+          ],
           [Markup.button.url("📞 Owner ဆက်သွယ်ရန်", `tg://user?id=${OWNER_ID}`)],
           [Markup.button.callback("🔙 ငွေပေးနည်း ပြောင်းရန်", `buy_${channelDbId}`)],
         ]),
