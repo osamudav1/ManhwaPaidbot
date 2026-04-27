@@ -23,6 +23,7 @@ import {
   getActiveUserIds,
   getUserCount,
   markUserBlocked,
+  getUserTotalSpend,
 } from "./db.js";
 import {
   getStartKeyboard,
@@ -164,14 +165,41 @@ async function showStartScreen(ctx: any) {
   const userId = ctx.from.id;
   clearUserState(userId);
 
-  // Track user for broadcast list
+  // Track user for broadcast list; detect new users to notify owner
   try {
-    await upsertBotUser({
+    const { isNew } = await upsertBotUser({
       telegram_id: String(userId),
       username: ctx.from.username || null,
       first_name: ctx.from.first_name || null,
       last_name: ctx.from.last_name || null,
     });
+
+    if (isNew && !isOwner(userId)) {
+      // Notify owner about new user joining
+      try {
+        const totalSpend = await getUserTotalSpend(String(userId));
+        const fullName = `${ctx.from.first_name || ""}${ctx.from.last_name ? " " + ctx.from.last_name : ""}`.trim();
+        const now = new Date();
+        const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+        const mention = `<a href="tg://user?id=${userId}">${escHtml(fullName || "User")}</a>`;
+        const usernamePart = ctx.from.username ? `@${escHtml(ctx.from.username)}` : "(username မရှိ)";
+
+        await ctx.telegram.sendMessage(
+          OWNER_ID,
+          `🆕 <b>User အသစ် ဝင်လာပါပြီ!</b>\n\n` +
+          `👤 <b>အမည်:</b> ${mention}\n` +
+          `🔖 <b>Username:</b> ${usernamePart}\n` +
+          `🆔 <b>ID:</b> <code>${userId}</code>\n` +
+          `📅 <b>Date:</b> ${dateStr}\n` +
+          `🕐 <b>Time:</b> ${timeStr}\n` +
+          `💰 <b>Total Spend:</b> ${totalSpend.toLocaleString()} ကျပ်`,
+          { parse_mode: "HTML" }
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed to notify owner of new user");
+      }
+    }
   } catch (err) {
     logger.error({ err }, "Failed to upsert bot user");
   }
@@ -1047,6 +1075,16 @@ export function registerHandlers(bot: Telegraf) {
       const inviteLink = inviteResult.invite_link;
       await confirmPurchase(purchaseId, inviteLink);
 
+      const userIdNum = parseInt(purchase.user_id, 10);
+
+      // First: send "Thank You" message (quoting style — sent first so it appears above)
+      await bot.telegram.sendMessage(
+        userIdNum,
+        `🫶🏻 Thank You For Supporting 🌷`,
+        {}
+      );
+
+      // Second: send the invite link message
       const userMessage =
         `✅ *မင်္ဂလာပါ လူကြီးမင်း!*\n\n` +
         `လူကြီးမင်း Paid ဝင်လိုက်သော Manhwaရဲ့\n` +
@@ -1056,7 +1094,7 @@ export function registerHandlers(bot: Telegraf) {
         `${inviteLink}\n\n` +
         `⚠️ တန်းဝင်ပါ - Link တစ်ခါသာ အသုံးပြုနိုင်ပါ`;
 
-      await bot.telegram.sendMessage(parseInt(purchase.user_id, 10), userMessage, {
+      await bot.telegram.sendMessage(userIdNum, userMessage, {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [

@@ -223,7 +223,12 @@ export async function upsertBotUser(data: {
   username?: string | null;
   first_name?: string | null;
   last_name?: string | null;
-}): Promise<void> {
+}): Promise<{ isNew: boolean }> {
+  const existing = await query(
+    "SELECT telegram_id FROM bot_users WHERE telegram_id = $1",
+    [data.telegram_id]
+  );
+  const isNew = existing.rows.length === 0;
   await query(
     `INSERT INTO bot_users (telegram_id, username, first_name, last_name)
      VALUES ($1, $2, $3, $4)
@@ -240,6 +245,18 @@ export async function upsertBotUser(data: {
       data.last_name ?? null,
     ]
   );
+  return { isNew };
+}
+
+export async function getUserTotalSpend(telegramId: string): Promise<number> {
+  const res = await query(
+    `SELECT COALESCE(SUM(c.price), 0) AS total
+     FROM purchases p
+     JOIN channels c ON c.channel_id = p.channel_id
+     WHERE p.user_id = $1 AND p.status = 'confirmed'`,
+    [telegramId]
+  );
+  return Number((res.rows[0] as { total?: unknown })?.total ?? 0);
 }
 
 export async function markUserBlocked(telegramId: string): Promise<void> {
