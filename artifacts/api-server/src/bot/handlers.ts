@@ -175,9 +175,12 @@ async function showStartScreen(ctx: any) {
     });
 
     if (isNew && !isOwner(userId)) {
-      // Notify owner about new user joining
+      // Notify owner about new user joining (fires only once per unique user ID)
       try {
-        const totalSpend = await getUserTotalSpend(String(userId));
+        const [totalSpend, userCount] = await Promise.all([
+          getUserTotalSpend(String(userId)),
+          getUserCount(),
+        ]);
         const fullName = `${ctx.from.first_name || ""}${ctx.from.last_name ? " " + ctx.from.last_name : ""}`.trim();
         const now = new Date();
         const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -193,7 +196,8 @@ async function showStartScreen(ctx: any) {
           `🆔 <b>ID:</b> <code>${userId}</code>\n` +
           `📅 <b>Date:</b> ${dateStr}\n` +
           `🕐 <b>Time:</b> ${timeStr}\n` +
-          `💰 <b>Total Spend:</b> ${totalSpend.toLocaleString()} ကျပ်`,
+          `💰 <b>Total Spend:</b> ${totalSpend.toLocaleString()} ကျပ်\n` +
+          `\n👥 <b>Bot Total Users:</b> ${userCount.total} ယောက်`,
           { parse_mode: "HTML" }
         );
       } catch (err) {
