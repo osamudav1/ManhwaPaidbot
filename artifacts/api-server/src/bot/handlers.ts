@@ -325,27 +325,53 @@ export function registerHandlers(bot: Telegraf) {
     if (!isRelayable) return next();
 
     try {
-      const fullName = `${ctx.from.first_name || ""} ${ctx.from.last_name || ""}`.trim();
-      const usernamePart = ctx.from.username ? ` @${ctx.from.username}` : "";
+      const fullName = `${ctx.from.first_name || ""}${ctx.from.last_name ? " " + ctx.from.last_name : ""}`.trim();
+      const mention = `<a href="tg://user?id=${userId}">${escHtml(fullName || "User")}</a>`;
+      const usernamePart = ctx.from.username ? ` · @${escHtml(ctx.from.username)}` : "";
+
+      // Detect media type label for owner's info header
+      let mediaLabel = "💬 Text";
+      if (message.photo) mediaLabel = "🖼️ Photo";
+      else if (message.video) mediaLabel = "🎬 Video";
+      else if (message.voice) mediaLabel = "🎤 Voice";
+      else if (message.audio) mediaLabel = "🎵 Audio";
+      else if (message.document) mediaLabel = "📄 Document";
+      else if (message.sticker) mediaLabel = "😄 Sticker";
+      else if (message.animation) mediaLabel = "🎞️ GIF";
+      else if (message.video_note) mediaLabel = "⭕ Video Note";
+
+      // 1. Info header — one compact message so owner knows who & what
       await ctx.telegram.sendMessage(
         OWNER_ID,
-        `📨 <b>စာအသစ် ရောက်လာပါတယ်</b>\n` +
-          `👤 <b>${escHtml(fullName) || "(no name)"}</b>${escHtml(usernamePart)}\n` +
-          `🆔 <code>${userId}</code>\n` +
-          `<blockquote>💬 အောက်က message ကို Reply ဆွဲပြီး ပြန်ရိုက်ပါ — User ဆီ အလိုအလျောက် ပြန်ပို့ပေးပါမည်။</blockquote>`,
-        { parse_mode: "HTML" }
+        `📨 ${mention}${usernamePart}\n` +
+          `🆔 <code>${userId}</code> · ${mediaLabel}\n` +
+          `<blockquote>↩️ Reply ဆွဲပြီး ပြန်ပို့ပါ — User ဆီ အလိုအလျောက် ရောက်ပါမည်</blockquote>`,
+        { parse_mode: "HTML", link_preview_options: { is_disabled: true } as any }
       );
-      const copied = await ctx.telegram.copyMessage(
+
+      // 2. Forward the actual message (shows "Forwarded from [User]" header in Telegram)
+      const forwarded = await ctx.telegram.forwardMessage(
         OWNER_ID,
         ctx.chat.id,
         message.message_id
       );
-      forwardedMap.set(copied.message_id, userId);
+      forwardedMap.set(forwarded.message_id, userId);
 
       // Trim the map if it grows too large (keep last 1000 entries)
       if (forwardedMap.size > 1000) {
         const firstKey = forwardedMap.keys().next().value;
         if (firstKey !== undefined) forwardedMap.delete(firstKey);
+      }
+
+      // Acknowledge to user so they know the message reached the owner
+      try {
+        await ctx.telegram.sendMessage(
+          userId,
+          `✅ သင့်စာ Admin ဆီ ရောက်ပါပြီ။ ခဏ စောင့်ပါ။`,
+          { reply_parameters: { message_id: message.message_id } } as any
+        );
+      } catch {
+        // ack failure is non-critical
       }
     } catch (err) {
       logger.error({ err }, "Failed to relay user message to owner");
