@@ -67,5 +67,9 @@ export async function ensureBotSchema(): Promise<void> {
     "welcome_caption_entities",
     "welcome_caption_entities TEXT",
   );
+  await ensureColumn("bot_users", "warnings", "warnings INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn("bot_users", "credits",  "credits INTEGER NOT NULL DEFAULT 100");
+  await ensureColumn("bot_users", "muted_until", "muted_until TEXT");
+  await ensureColumn("bot_users", "is_banned", "is_banned INTEGER NOT NULL DEFAULT 0");
   logger.info("Bot DB schema ensured (sqlite)");
 }

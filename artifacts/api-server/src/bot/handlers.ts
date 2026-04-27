@@ -24,6 +24,13 @@ import {
   getUserCount,
   markUserBlocked,
   getUserTotalSpend,
+  getUserStatus,
+  addWarnGetState,
+  muteUser,
+  unmuteUser,
+  banUser,
+  unbanUser,
+  getBotUserById,
 } from "./db.js";
 import {
   getStartKeyboard,
@@ -268,11 +275,141 @@ async function showAdminPanel(ctx: any) {
 
 export function registerHandlers(bot: Telegraf) {
   // ===== User ↔ Owner Relay =====
-  // In-memory map: forwarded message ID in owner's chat → original user's Telegram ID.
-  // When the owner replies to one of these forwarded messages, the bot copies
-  // the reply back to the original user (any media type — text, photo, video,
-  // voice, sticker, document, etc., handled natively by Telegram's copyMessage).
   const forwardedMap = new Map<number, number>();
+
+  // ===== Button-Spam Rate Limiter =====
+  // Track callback_query timestamps per user (in-memory, resets on restart).
+  const clickLog = new Map<number, number[]>(); // userId → ms timestamps
+  const SPAM_WINDOW_MS = 10_000; // 10 seconds
+  const SPAM_THRESHOLD = 11;     // 11 clicks → warn
+
+  // ===== Spam Warn Helper =====
+  async function handleSpamWarn(userId: number, ctx: any): Promise<void> {
+    try {
+      const { warnNum, credits, shouldMute, shouldBan } = await addWarnGetState(String(userId));
+      const user = await getBotUserById(String(userId));
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+
+      // Build warn message to user
+      let warnText =
+        `⚠️ <b>Warn - ${warnNum}/3</b>\n` +
+        (shouldMute ? `Ban Type - 1Day Mute\n` : ``) +
+        `Reason - Button Spam\n` +
+        `Time - ${timeStr}\n` +
+        `Date - ${dateStr}\n` +
+        `You Id - <code>${userId}</code>\n` +
+        `You Account Credit - -20 &gt; Now ${credits}\n\n` +
+        `<i>Credit 0 ဖြစ်ရင် bot အသုံးပြုခွင့် Auto Banပါမယ်</i>`;
+
+      await bot.telegram.sendMessage(userId, warnText, { parse_mode: "HTML" });
+
+      // 3/3 → mute for 1 day
+      if (shouldMute && !shouldBan) {
+        const muteUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        await muteUser(String(userId), muteUntil.toISOString());
+
+        // Notify owner
+        const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || "User";
+        const uname = user?.username ? ` @${escHtml(user.username)}` : "";
+        const muteStr = muteUntil.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) +
+          " " + muteUntil.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+        await bot.telegram.sendMessage(
+          OWNER_ID,
+          `🔇 <b>User Muted (Button Spam)</b>\n\n` +
+          `👤 ${escHtml(fullName)}${uname}\n` +
+          `🆔 <code>${userId}</code>\n` +
+          `⚠️ Warns: 3/3\n` +
+          `💰 Credits: ${credits}\n` +
+          `🗓 Muted Until: ${muteStr}`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "🔊 Unmute", callback_data: `owner_unmute_${userId}` },
+                  { text: "🚫 Ban",    callback_data: `owner_ban_${userId}` },
+                ],
+              ],
+            },
+          }
+        );
+      }
+
+      // Credits hit 0 → auto-ban
+      if (shouldBan) {
+        await banUser(String(userId));
+        await bot.telegram.sendMessage(
+          userId,
+          `🚫 <b>Account Banned</b>\n\nCredit 0 ဖြစ်သောကြောင့် Bot အသုံးပြုခွင့် ပိတ်ပါပြီ။\nAdmin ကို ဆက်သွယ်ပါ။`,
+          { parse_mode: "HTML" }
+        );
+        const user2 = await getBotUserById(String(userId));
+        const fullName2 = [user2?.first_name, user2?.last_name].filter(Boolean).join(" ") || "User";
+        const uname2 = user2?.username ? ` @${escHtml(user2.username)}` : "";
+        await bot.telegram.sendMessage(
+          OWNER_ID,
+          `🚫 <b>User Auto-Banned (Credit 0)</b>\n\n👤 ${escHtml(fullName2)}${uname2}\n🆔 <code>${userId}</code>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "✅ Unban", callback_data: `owner_unban_${userId}` }],
+              ],
+            },
+          }
+        );
+      }
+    } catch (err) {
+      logger.error({ err }, "handleSpamWarn failed");
+    }
+  }
+
+  // ===== Callback-Query Gate: Ban / Mute / Rate-Limit checks =====
+  bot.use(async (ctx: any, next: any) => {
+    if (!ctx.callbackQuery || !ctx.from) return next();
+    const userId = ctx.from.id;
+    if (isOwner(userId)) return next();
+
+    // Ensure user exists in DB before status check
+    const status = await getUserStatus(String(userId)).catch(() => null);
+    if (!status) return next();
+
+    // 1. Banned → block all callbacks
+    if (status.is_banned) {
+      await ctx.answerCbQuery("❌ Bot အသုံးပြုခွင့် ပိတ်ထားသည်").catch(() => {});
+      return;
+    }
+
+    // 2. Muted → check expiry
+    if (status.muted_until) {
+      const muteEnd = new Date(status.muted_until);
+      if (muteEnd > new Date()) {
+        const muteStr = muteEnd.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) +
+          " " + muteEnd.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+        await ctx.answerCbQuery(`🔇 ${muteStr} အထိ Mute ဖြစ်နေသည်`).catch(() => {});
+        return;
+      }
+      // Mute expired — lift it
+      await unmuteUser(String(userId)).catch(() => {});
+    }
+
+    // 3. Rate limit — track click timestamps
+    const now = Date.now();
+    const prev = (clickLog.get(userId) || []).filter((t) => now - t < SPAM_WINDOW_MS);
+    prev.push(now);
+    clickLog.set(userId, prev);
+
+    if (prev.length >= SPAM_THRESHOLD) {
+      clickLog.delete(userId); // reset counter so warn isn't repeated every click
+      await ctx.answerCbQuery("⚠️ Spam detected!").catch(() => {});
+      await handleSpamWarn(userId, ctx);
+      return;
+    }
+
+    return next();
+  });
 
   bot.use(async (ctx, next) => {
     const message: any = (ctx as any).message;
@@ -2048,5 +2185,128 @@ export function registerHandlers(bot: Telegraf) {
     } catch (err) {
       logger.error({ err }, "my_chat_member handler error");
     }
+  });
+
+  // ===== Owner: Unmute user (from notification button) =====
+  bot.action(/^owner_unmute_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) { await ctx.answerCbQuery("Permission မရှိပါ"); return; }
+    await ctx.answerCbQuery("Unmuting...");
+    const targetId = ctx.match[1];
+    await unmuteUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `✅ Mute ပြေပြီ! Bot ကို ပြန်အသုံးပြုနိုင်ပါပြီ။`
+      );
+    } catch {}
+    try {
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    } catch {}
+    await safeReply(ctx, `✅ ${escHtml(name)} (<code>${targetId}</code>) Unmute ပြီး`, { parse_mode: "HTML" });
+  });
+
+  // ===== Owner: Ban user (from notification button) =====
+  bot.action(/^owner_ban_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) { await ctx.answerCbQuery("Permission မရှိပါ"); return; }
+    await ctx.answerCbQuery("Banning...");
+    const targetId = ctx.match[1];
+    await banUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `🚫 Bot အသုံးပြုခွင့် ပိတ်ပါပြီ။ Admin ကို ဆက်သွယ်ပါ။`
+      );
+    } catch {}
+    try {
+      await ctx.editMessageReplyMarkup({
+        inline_keyboard: [[{ text: "✅ Unban", callback_data: `owner_unban_${targetId}` }]],
+      });
+    } catch {}
+    await safeReply(ctx, `🚫 ${escHtml(name)} (<code>${targetId}</code>) Banned`, { parse_mode: "HTML" });
+  });
+
+  // ===== Owner: Unban user (from notification button) =====
+  bot.action(/^owner_unban_(\d+)$/, async (ctx) => {
+    if (!isOwner(ctx.from.id)) { await ctx.answerCbQuery("Permission မရှိပါ"); return; }
+    await ctx.answerCbQuery("Unbanning...");
+    const targetId = ctx.match[1];
+    await unbanUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `✅ Ban ပြေပြီ! Bot ကို ပြန်အသုံးပြုနိုင်ပါပြီ။ Credits 100 ပြန်ဖြည့်ပေးပါပြီ။`
+      );
+    } catch {}
+    try {
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+    } catch {}
+    await safeReply(ctx, `✅ ${escHtml(name)} (<code>${targetId}</code>) Unbanned`, { parse_mode: "HTML" });
+  });
+
+  // ===== Owner Commands: /ban /unban /unmute by User ID =====
+  bot.command("ban", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    const parts = (ctx.message as any).text?.split(/\s+/);
+    const targetId = parts?.[1]?.trim();
+    if (!targetId || !/^\d+$/.test(targetId)) {
+      await safeReply(ctx, "Usage: /ban USER_ID");
+      return;
+    }
+    await banUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `🚫 Bot အသုံးပြုခွင့် ပိတ်ပါပြီ။ Admin ကို ဆက်သွယ်ပါ။`
+      );
+    } catch {}
+    await safeReply(ctx, `🚫 ${escHtml(name)} (<code>${targetId}</code>) Banned`, { parse_mode: "HTML" });
+  });
+
+  bot.command("unban", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    const parts = (ctx.message as any).text?.split(/\s+/);
+    const targetId = parts?.[1]?.trim();
+    if (!targetId || !/^\d+$/.test(targetId)) {
+      await safeReply(ctx, "Usage: /unban USER_ID");
+      return;
+    }
+    await unbanUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `✅ Ban ပြေပြီ! Bot ကို ပြန်အသုံးပြုနိုင်ပါပြီ။ Credits 100 ပြန်ဖြည့်ပေးပါပြီ။`
+      );
+    } catch {}
+    await safeReply(ctx, `✅ ${escHtml(name)} (<code>${targetId}</code>) Unbanned & Credits reset`, { parse_mode: "HTML" });
+  });
+
+  bot.command("unmute", async (ctx) => {
+    if (!isOwner(ctx.from.id)) return;
+    const parts = (ctx.message as any).text?.split(/\s+/);
+    const targetId = parts?.[1]?.trim();
+    if (!targetId || !/^\d+$/.test(targetId)) {
+      await safeReply(ctx, "Usage: /unmute USER_ID");
+      return;
+    }
+    await unmuteUser(targetId);
+    const user = await getBotUserById(targetId);
+    const name = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || targetId;
+    try {
+      await bot.telegram.sendMessage(
+        parseInt(targetId, 10),
+        `✅ Mute ပြေပြီ! Bot ကို ပြန်အသုံးပြုနိုင်ပါပြီ။`
+      );
+    } catch {}
+    await safeReply(ctx, `✅ ${escHtml(name)} (<code>${targetId}</code>) Unmuted`, { parse_mode: "HTML" });
   });
 }

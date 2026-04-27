@@ -281,6 +281,88 @@ export async function getUserCount(): Promise<{ total: number; active: number }>
   return { total: Number(row.total ?? 0), active: Number(row.active ?? 0) };
 }
 
+// ===== Warn / Mute / Ban system =====
+
+export interface UserStatus {
+  warnings: number;
+  credits: number;
+  muted_until: string | null;
+  is_banned: number;
+}
+
+export async function getUserStatus(telegramId: string): Promise<UserStatus> {
+  const res = await query(
+    "SELECT warnings, credits, muted_until, is_banned FROM bot_users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  const row = res.rows[0] as Partial<UserStatus> | undefined;
+  return {
+    warnings:    Number(row?.warnings    ?? 0),
+    credits:     Number(row?.credits     ?? 100),
+    muted_until: (row?.muted_until as string | null | undefined) ?? null,
+    is_banned:   Number(row?.is_banned   ?? 0),
+  };
+}
+
+/** Increments warnings, deducts 20 credits.
+ *  Returns the state AS REPORTED to the user (warnings before reset, credits after deduct).
+ *  If warnings reached 3, resets warnings to 0 (mute handled by caller). */
+export async function addWarnGetState(telegramId: string): Promise<{
+  warnNum: number;
+  credits: number;
+  shouldMute: boolean;
+  shouldBan: boolean;
+}> {
+  const status = await getUserStatus(telegramId);
+  const warnNum  = status.warnings + 1;
+  const credits  = Math.max(0, status.credits - 20);
+  const shouldMute = warnNum >= 3;
+  const shouldBan  = credits <= 0;
+  const storedWarnings = shouldMute ? 0 : warnNum;
+
+  await query(
+    "UPDATE bot_users SET warnings = $1, credits = $2 WHERE telegram_id = $3",
+    [storedWarnings, credits, telegramId]
+  );
+  return { warnNum, credits, shouldMute, shouldBan };
+}
+
+export async function muteUser(telegramId: string, until: string): Promise<void> {
+  await query(
+    "UPDATE bot_users SET muted_until = $1 WHERE telegram_id = $2",
+    [until, telegramId]
+  );
+}
+
+export async function unmuteUser(telegramId: string): Promise<void> {
+  await query(
+    "UPDATE bot_users SET muted_until = NULL, warnings = 0 WHERE telegram_id = $1",
+    [telegramId]
+  );
+}
+
+export async function banUser(telegramId: string): Promise<void> {
+  await query(
+    "UPDATE bot_users SET is_banned = 1, muted_until = NULL WHERE telegram_id = $1",
+    [telegramId]
+  );
+}
+
+export async function unbanUser(telegramId: string): Promise<void> {
+  await query(
+    "UPDATE bot_users SET is_banned = 0, muted_until = NULL, warnings = 0, credits = 100 WHERE telegram_id = $1",
+    [telegramId]
+  );
+}
+
+export async function getBotUserById(telegramId: string): Promise<BotUser | null> {
+  const res = await query(
+    "SELECT * FROM bot_users WHERE telegram_id = $1",
+    [telegramId]
+  );
+  return (res.rows[0] as unknown as BotUser) || null;
+}
+
 // ===== Backup / Restore =====
 
 export interface BackupData {
