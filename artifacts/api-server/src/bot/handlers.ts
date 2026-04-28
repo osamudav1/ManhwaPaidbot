@@ -446,7 +446,10 @@ export function registerHandlers(bot: Telegraf) {
     }
 
     // ----- Non-owner sending a message → forward to owner if no active flow -----
-    // Skip messages from bots (e.g. @GroupAnonymousBot)
+    // Only relay private DMs — ignore group/supergroup/channel messages entirely.
+    // This also naturally blocks @GroupAnonymousBot and other group bots.
+    if (ctx.chat.type !== "private") return next();
+    // Extra guard: skip any bot sender
     if (ctx.from.is_bot) return next();
 
     const state = getUserState(userId);
