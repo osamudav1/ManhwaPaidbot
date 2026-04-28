@@ -446,6 +446,9 @@ export function registerHandlers(bot: Telegraf) {
     }
 
     // ----- Non-owner sending a message → forward to owner if no active flow -----
+    // Skip messages from bots (e.g. @GroupAnonymousBot)
+    if (ctx.from.is_bot) return next();
+
     const state = getUserState(userId);
     if (state.action) return next(); // user is in purchase / restore / etc.
     if (typeof message.text === "string" && message.text.startsWith("/")) {

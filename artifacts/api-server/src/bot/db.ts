@@ -342,15 +342,19 @@ export async function unmuteUser(telegramId: string): Promise<void> {
 }
 
 export async function banUser(telegramId: string): Promise<void> {
+  // Insert a stub row if the ID doesn't exist yet (e.g. a bot or unknown user),
+  // then mark as banned.
   await query(
-    "UPDATE bot_users SET is_banned = 1, muted_until = NULL WHERE telegram_id = $1",
+    `INSERT INTO bot_users (telegram_id, is_banned) VALUES ($1, 1)
+     ON CONFLICT (telegram_id) DO UPDATE SET is_banned = 1, muted_until = NULL`,
     [telegramId]
   );
 }
 
 export async function unbanUser(telegramId: string): Promise<void> {
   await query(
-    "UPDATE bot_users SET is_banned = 0, muted_until = NULL, warnings = 0, credits = 100 WHERE telegram_id = $1",
+    `INSERT INTO bot_users (telegram_id, is_banned, credits) VALUES ($1, 0, 100)
+     ON CONFLICT (telegram_id) DO UPDATE SET is_banned = 0, muted_until = NULL, warnings = 0, credits = 100`,
     [telegramId]
   );
 }
